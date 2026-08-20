@@ -43,12 +43,14 @@
   "homepage": "https://github.com/renatex314/NetCluster#readme",
   "license": "MIT",
   "scripts": {
-    "test": "node --stack-size=8000 test/invariants.js && node test/api.js && node --stack-size=8000 test/filter.js && node test/demo-headless.js",
+    "test": "node --stack-size=8000 test/invariants.js && node test/api.js && node --stack-size=8000 test/filter.js && node test/demo-headless.js && node examples/basic.js > /dev/null",
     "test:redis": "node test/redis-integration.js",
     "bench": "node --max-old-space-size=8192 bench/throughput.js && node --expose-gc --max-old-space-size=8192 bench/ops.js && node --max-old-space-size=8192 bench/quality.js && node --max-old-space-size=8192 bench/stability.js && node --max-old-space-size=8192 bench/convergence.js && node --max-old-space-size=8192 bench/hysteresis.js && node --max-old-space-size=8192 bench/density.js && node --expose-gc --max-old-space-size=8192 bench/filter.js",
     "bench:redis": "node --max-old-space-size=8192 bench/redis-throughput.js && node --max-old-space-size=8192 bench/redis-blocking.js && node --max-old-space-size=8192 bench/redis-batchsize.js",
     "build": "node scripts/bundle.js && node scripts/gen-figure.js && node scripts/build-report.js",
-    "serve": "node server/server.js"
+    "serve": "node server/server.js",
+    "example": "node examples/basic.js",
+    "example:redis": "node examples/redis.js"
   },
   "dependencies": {},
   "peerDependencies": {

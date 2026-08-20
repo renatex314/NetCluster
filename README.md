@@ -34,24 +34,34 @@ import { NetCluster } from 'netcluster-js';
 
 const index = new NetCluster({ radius: 40, maxZoom: 16 });
 
-index.insert('vehicle-1', -46.63, -23.55, { plate: 'ABC-1234' });
-index.moveTo('vehicle-1', -46.64, -23.56);   // ~2 µs, no rebuild
-index.remove('vehicle-1');
+// index a fleet
+for (let i = 0; i < 1000; i++) {
+  index.insert(`vehicle-${i}`, -46.63 + Math.random() * 0.2, -23.55 + Math.random() * 0.2,
+               { plate: `ABC-${i}` });
+}
 
-// read API matches supercluster
-const clusters = index.getClusters([-47, -24, -46, -23], 11);
+// a device reports a new position — ~1 µs, no rebuild
+index.moveTo('vehicle-0', -46.64, -23.56);
+
+// what to draw in this viewport at this zoom
+const features = index.getClusters([-47, -24, -46, -23], 11);
 const tile     = index.getTile(11, 758, 1161);
 
-// cluster ids come from the features getClusters() returns -- a device id is not
-// a cluster id, and passing one throws
-const clusterId = clusters.find(f => f.properties.cluster)?.properties.cluster_id;
-const children  = index.getChildren(clusterId);
-const leaves    = index.getLeaves(clusterId, 10);
-const zoom      = index.getClusterExpansionZoom(clusterId);
+// drill into a cluster. A cluster id is read off a feature — a device id is NOT
+// a cluster id, and passing one throws.
+const clusterId = features.find(f => f.properties.cluster).properties.cluster_id;
+index.getClusterExpansionZoom(clusterId);   // the zoom it splits at
+index.getChildren(clusterId);               // its sub-clusters
+index.getLeaves(clusterId, 10);             // the vehicles inside it
 
-// plus one supercluster doesn't have:
-const marker   = index.representative('vehicle-1', 11);  // which cluster is it drawn in
+// which marker is this device drawn in? (supercluster has no equivalent)
+index.representative('vehicle-0', 11);
+
+// device goes offline
+index.remove('vehicle-0');
 ```
+
+Runnable version: [`examples/basic.js`](examples/basic.js).
 
 `getClusters` returns GeoJSON features in supercluster's shape, so an existing frontend needs no changes.
 
@@ -71,6 +81,8 @@ await index.upsert('vehicle-1', -46.63, -23.55);           // insert and move ar
 await index.upsertMany([{ id: 'v2', lng: -46.6, lat: -23.5 }, /* … */]);
 await index.getClusters([-47, -24, -46, -23], 11);
 ```
+
+Runnable version: [`examples/redis.js`](examples/redis.js).
 
 The whole index lives in Redis and every mutation runs as a Lua script, because the invariants span keys — two pods writing concurrently would otherwise corrupt the structure permanently. See [`server/README.md`](server/README.md) for the architecture, the measured limits and the operational rules.
 
