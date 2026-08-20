@@ -1,5 +1,5 @@
 {
-  "name": "@renatex314/netcluster",
+  "name": "netcluster-js",
   "version": "0.1.0",
   "description": "Fully dynamic hierarchical geospatial clustering. Move a point in ~2us instead of rebuilding the index.",
   "type": "module",
@@ -42,9 +42,6 @@
   },
   "homepage": "https://github.com/renatex314/NetCluster#readme",
   "license": "MIT",
-  "publishConfig": {
-    "access": "public"
-  },
   "scripts": {
     "test": "node --stack-size=8000 test/invariants.js && node test/api.js && node --stack-size=8000 test/filter.js && node test/demo-headless.js",
     "test:redis": "node test/redis-integration.js",

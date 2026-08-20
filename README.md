@@ -22,7 +22,7 @@ NetCluster maintains a **hierarchy of nets** (a cover tree over Web Mercator) wh
 ## Install
 
 ```bash
-npm install @renatex314/netcluster
+npm install netcluster-js
 ```
 
 The core has **zero dependencies**. `ioredis` and `fastify` are optional peers, needed only if you use the Redis backend or the bundled HTTP server.
@@ -30,7 +30,7 @@ The core has **zero dependencies**. `ioredis` and `fastify` are optional peers, 
 ## Quick start — in-process
 
 ```js
-import { NetCluster } from '@renatex314/netcluster';
+import { NetCluster } from 'netcluster-js';
 
 const index = new NetCluster({ radius: 40, maxZoom: 16 });
 
@@ -55,7 +55,7 @@ const marker   = index.representative('vehicle-1', 11);  // which cluster is it 
 
 ```js
 import Redis from 'ioredis';
-import { RedisNetCluster } from '@renatex314/netcluster/redis';
+import { RedisNetCluster } from 'netcluster-js/redis';
 
 const redis  = new Redis(process.env.REDIS_URL);
 const reader = new Redis(process.env.REDIS_READ_URL);      // optional replica
