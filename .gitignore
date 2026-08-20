@@ -6,3 +6,4 @@ docs/report.html
 docs/fig-nets.svg
 dump.rdb
 *.rdb
+*.tgz

@@ -1,5 +1,5 @@
 {
-  "name": "netcluster",
+  "name": "@renatex314/netcluster",
   "version": "0.1.0",
   "description": "Fully dynamic hierarchical geospatial clustering. Move a point in ~2us instead of rebuilding the index.",
   "type": "module",
@@ -9,16 +9,42 @@
     "./redis": "./server/redis-netcluster.js",
     "./package.json": "./package.json"
   },
-  "files": ["src", "server", "README.md", "LICENSE"],
-  "engines": { "node": ">=18" },
-  "keywords": [
-    "clustering", "geospatial", "supercluster", "map", "markers", "realtime",
-    "incremental", "dynamic", "cover-tree", "net-tree", "mapbox", "leaflet", "redis"
+  "files": [
+    "src",
+    "server",
+    "README.md",
+    "LICENSE"
   ],
-  "repository": { "type": "git", "url": "git+https://github.com/renatex314/NetCluster.git" },
-  "bugs": { "url": "https://github.com/renatex314/NetCluster/issues" },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "clustering",
+    "geospatial",
+    "supercluster",
+    "map",
+    "markers",
+    "realtime",
+    "incremental",
+    "dynamic",
+    "cover-tree",
+    "net-tree",
+    "mapbox",
+    "leaflet",
+    "redis"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/renatex314/NetCluster.git"
+  },
+  "bugs": {
+    "url": "https://github.com/renatex314/NetCluster/issues"
+  },
   "homepage": "https://github.com/renatex314/NetCluster#readme",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "test": "node --stack-size=8000 test/invariants.js && node test/api.js && node --stack-size=8000 test/filter.js && node test/demo-headless.js",
     "test:redis": "node test/redis-integration.js",
@@ -33,8 +59,12 @@
     "ioredis": ">=5"
   },
   "peerDependenciesMeta": {
-    "ioredis": { "optional": true },
-    "fastify": { "optional": true }
+    "ioredis": {
+      "optional": true
+    },
+    "fastify": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "fastify": "^5.12.1",
