@@ -25,7 +25,7 @@ NetCluster maintains a **hierarchy of nets** (a cover tree over Web Mercator) wh
 npm install netcluster-js
 ```
 
-The core has **zero dependencies**. `ioredis` and `fastify` are optional peers, needed only if you use the Redis backend or the bundled HTTP server.
+**TypeScript declarations are bundled** — there is no `@types/netcluster-js` to install, and there shouldn't be. The core has **zero dependencies**. `ioredis` and `fastify` are optional peers, needed only if you use the Redis backend or the bundled HTTP server.
 
 ## Quick start — in-process
 
