@@ -1,0 +1,42 @@
+  tick 0: 514k moves/s
+  tick 10: 635k moves/s
+  tick 20: 653k moves/s
+  tick 30: 637k moves/s
+  tick 40: 637k moves/s
+
+=== QUALITY UNDER 5,000,000 CONTINUOUS MOVES (no rebuild, zoom 10) ===
+
+  moves so far  nc clusters  nc mean px  nc p95 px  nc max px  churn/move
+  ------------  -----------  ----------  ---------  ---------  ----------
+             0       21,995        18.6       39.7       63.7           -
+     1,000,000       21,857        19.1       40.9         70        0.03
+     2,000,000       21,784        19.4       41.4       72.5       0.029
+     3,000,000       21,720        19.6       41.7       72.4       0.027
+     4,000,000       21,731        19.7       41.9       69.7       0.027
+     5,000,000       21,715        19.7       41.9       69.2       0.027
+
+  reference: a *freshly rebuilt* index over the same positions
+
+  moves so far  rebuilt clusters  rebuilt mean px  rebuilt max px
+  ------------  ----------------  ---------------  --------------
+             0            21,995             18.6            63.7
+     1,000,000            22,000             18.6            70.8
+     2,000,000            21,991             18.6            67.2
+     3,000,000            21,977             18.7            67.6
+     4,000,000            21,976             18.7            64.3
+     5,000,000            21,980             18.7            68.5
+
+  baseline: incremental greedy / leader clustering, same O(1)-ish updates, no repair
+
+  moves so far  greedy clusters  greedy mean px  greedy max px
+  ------------  ---------------  --------------  -------------
+             0           22,630            15.9           54.3
+     1,000,000           22,668            15.9             41
+     2,000,000           22,690              16             40
+     3,000,000           22,710            16.1             40
+     4,000,000           22,753            16.3           41.8
+     5,000,000           22,790            16.5           40.2
+
+  final index stats: {"inserts":100000,"removes":0,"moves":5000000,"movesFast":4895867,"movesRebuilt":104133,"promotions":77162,"reparents":134630,"probes":112131884}
+  grid listings sum_z |C_z| = 532,717 = 5.33 per point
+  memory ~ 30.7 MB

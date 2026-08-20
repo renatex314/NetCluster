@@ -1,0 +1,18 @@
+
+=== RUSH HOUR: 40% of 100,000 devices converge on 20 venues (zoom 10) ===
+  colliding % : cluster markers drawn within 20px of another marker
+
+              phase                  method  clusters  mean px  max px  colliding %  min gap px
+  -----------------  ----------------------  --------  -------  ------  -----------  ----------
+    t=0 (dispersed)       netcluster (live)    21,995     18.6    63.7            0          16
+    t=0 (dispersed)    netcluster (rebuilt)    21,995     18.6    63.7            0          16
+    t=0 (dispersed)  supercluster (rebuilt)    21,938     18.6    65.4            0        20.7
+    t=0 (dispersed)           greedy (live)    22,630     15.9    54.3            0        25.4
+  t=20 (converging)       netcluster (live)    24,688     18.3    73.2            0        12.8
+  t=20 (converging)    netcluster (rebuilt)    24,967     17.6      70            0        20.3
+  t=20 (converging)  supercluster (rebuilt)    24,990     17.5    68.6            0        22.1
+  t=20 (converging)           greedy (live)    29,070     15.1    56.3          6.8           0
+     t=60 (crowded)       netcluster (live)    32,331     16.4    94.6            0         7.6
+     t=60 (crowded)    netcluster (rebuilt)    32,691     15.4    64.7            0        21.2
+     t=60 (crowded)  supercluster (rebuilt)    32,684     15.3    69.7            0        21.5
+     t=60 (crowded)           greedy (live)    38,880     13.1      55          8.2           0

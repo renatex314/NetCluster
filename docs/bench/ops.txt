@@ -1,0 +1,13 @@
+          operation  netcluster              supercluster
+  -----------------  ----------  ------------------------
+     insert 1 point     2.06 us  877,446 us (full reload)
+       move 1 point     2.09 us  877,446 us (full reload)
+     remove 1 point     7.56 us  877,446 us (full reload)
+  re-insert 1 point     2.32 us  877,446 us (full reload)
+
+  N = 500,000 points
+  netcluster index memory   ~ 127.3 MB  (self-reported 127 MB)
+  supercluster index memory ~ 216.1 MB
+  sum_z |C_z| per point     = 4.24
+  fast-path moves           = 96.4%
+  re-parent ops per remove  = 3.29

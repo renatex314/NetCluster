@@ -1,0 +1,6 @@
+node_modules/
+*.log
+.DS_Store
+demo/netcluster.bundle.js
+docs/report.html
+docs/fig-nets.svg

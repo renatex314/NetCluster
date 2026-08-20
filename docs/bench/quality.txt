@@ -1,0 +1,26 @@
+
+=== CLUSTER QUALITY (N=50,000, radius=40px) ===
+  mean/p95/max px : distance from a point to the centroid it is drawn as
+  split nbrs %    : pairs closer than 10px placed in different clusters
+  min centroid gap: closest pair of drawn cluster markers
+
+  zoom        method  clusters  mean px  p95 px  max px  split nbrs %  min centroid gap px
+  ----  ------------  --------  -------  ------  ------  ------------  -------------------
+     4    netcluster       218      9.1    25.4    61.1             0                 23.3
+     4  supercluster       214      9.1    25.7    64.1             0                 25.5
+     4    fixed grid       443        7    17.2    46.6           0.3                  6.7
+     6    netcluster     2,300     18.8    37.3    72.8           0.1                 19.7
+     6  supercluster     2,318     20.6    41.9    74.4             0                 22.2
+     6    fixed grid     3,978     12.2    22.8    37.2           1.1                    2
+     8    netcluster     6,376       21    42.5      67           0.6                 23.5
+     8  supercluster     6,386     21.2      43      68           0.4                 21.2
+     8    fixed grid     7,564       13    23.6    34.5           3.8                  5.1
+    10    netcluster    14,145       17    37.9    61.8           1.5                 14.6
+    10  supercluster    14,128     16.9    38.2    62.4           1.2                 20.3
+    10    fixed grid    20,191     10.2    22.2    35.8          14.9                  1.8
+    12    netcluster    37,877      6.1    21.7    50.5             0                 24.7
+    12  supercluster    37,851      6.1    21.9    51.4             0                 22.1
+    12    fixed grid    44,876      2.1    14.4    31.1          22.6                  0.9
+    14    netcluster    48,877      0.6       0    37.1             0                 32.4
+    14  supercluster    48,873      0.6       0    37.1             0                 30.5
+    14    fixed grid    49,641      0.2       0    25.3          21.7                  3.5

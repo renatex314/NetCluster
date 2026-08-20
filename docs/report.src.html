@@ -1,0 +1,625 @@
+<title>NetCluster</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg:        #ECEDE7;
+    --surface:   #F6F6F2;
+    --sunk:      #E2E4DC;
+    --fg:        #101917;
+    --muted:     #55625B;
+    --faint:     #7E8B83;
+    --rule:      #CFD3C9;
+    --brass:     #8F5E12;
+    --brass-soft:#EDE2CB;
+    --depth:     #1F5C66;
+    --rust:      #92382A;
+    --demo-bg:   #E4E7DF;
+    --demo-grid: #D2D7CB;
+    --demo-dot:  #6E7C72;
+    --demo-cluster: rgba(143,94,18,.80);
+    --demo-edge: #6E4A10;
+    --demo-label:#FBF7EF;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:        #0D1513;  --surface:   #131E1B;  --sunk:      #0A100F;
+      --fg:        #E4E9E2;  --muted:     #9AA89E;  --faint:     #78887E;
+      --rule:      #26352F;  --brass:     #E0A557;  --brass-soft:#2A2116;
+      --depth:     #74C3CE;  --rust:      #E08163;
+      --demo-bg:   #0A1211;  --demo-grid: #182522;  --demo-dot:  #6F8479;
+      --demo-cluster: rgba(224,165,87,.78); --demo-edge: #F0C68C; --demo-label:#15100A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:        #0D1513;  --surface:   #131E1B;  --sunk:      #0A100F;
+    --fg:        #E4E9E2;  --muted:     #9AA89E;  --faint:     #78887E;
+    --rule:      #26352F;  --brass:     #E0A557;  --brass-soft:#2A2116;
+    --depth:     #74C3CE;  --rust:      #E08163;
+    --demo-bg:   #0A1211;  --demo-grid: #182522;  --demo-dot:  #6F8479;
+    --demo-cluster: rgba(224,165,87,.78); --demo-edge: #F0C68C; --demo-label:#15100A;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: "Source Sans 3", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 17px; line-height: 1.62; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px 96px; }
+  .col  { max-width: 68ch; }
+  h1, h2, h3 { font-family: "Zilla Slab", Georgia, serif; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(2.9rem, 7vw, 4.6rem); font-weight: 700; letter-spacing: -.02em; line-height: 1.02; }
+  h2 { font-size: clamp(1.5rem, 3vw, 1.95rem); font-weight: 600; letter-spacing: -.01em; line-height: 1.2; }
+  h3 { font-size: 1.16rem; font-weight: 600; }
+  p  { margin: 0 0 1.05em; }
+  a  { color: var(--depth); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible {
+    outline: 2px solid var(--brass); outline-offset: 2px; border-radius: 2px;
+  }
+  code, .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+  code { font-size: .86em; background: var(--sunk); padding: .1em .34em; border-radius: 3px; }
+  strong { font-weight: 600; }
+  .eyebrow { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .69rem;
+             letter-spacing: .18em; text-transform: uppercase; color: var(--faint); margin: 0 0 .9rem; }
+  header.top { padding: 68px 0 40px; border-bottom: 1px solid var(--rule); }
+  .deck { font-size: 1.24rem; line-height: 1.5; color: var(--muted); max-width: 62ch; margin-top: 1.3rem; }
+  .rulebar { display: flex; gap: 0; margin-top: 34px; border-top: 2px solid var(--fg); }
+  .rulebar div { height: 6px; }
+  .rulebar div:nth-child(1) { flex: 8; }
+  .rulebar div:nth-child(2) { flex: 4; background: var(--brass); }
+  .rulebar div:nth-child(3) { flex: 2; }
+  .rulebar div:nth-child(4) { flex: 1; background: var(--depth); }
+  section { padding-top: 58px; }
+  section > .col > .eyebrow, section > .eyebrow { color: var(--brass); }
+  .verdict { background: var(--surface); border: 1px solid var(--rule); border-left: 3px solid var(--brass);
+             padding: 26px 30px; margin: 26px 0 0; max-width: 68ch; }
+  .verdict p:last-child { margin-bottom: 0; }
+  .props { display: grid; gap: 1px; grid-template-columns: repeat(auto-fit, minmax(238px, 1fr));
+           background: var(--rule); border: 1px solid var(--rule); margin-top: 34px; }
+  .prop { background: var(--bg); padding: 20px 22px; }
+  .prop .n { font-family: "JetBrains Mono", monospace; font-size: .7rem; color: var(--faint); letter-spacing: .1em; }
+  .prop h3 { margin: .35rem 0 .5rem; }
+  .prop p { font-size: .95rem; color: var(--muted); margin: 0; }
+  .verd { display: inline-block; font-family: "JetBrains Mono", monospace; font-size: .72rem;
+          letter-spacing: .06em; padding: .14em .55em; border-radius: 2px; margin-top: .85rem;
+          background: var(--brass-soft); color: var(--brass); }
+  .figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 1px;
+          background: var(--rule); border-block: 1px solid var(--rule); margin-top: 46px; }
+  .fign { background: var(--bg); padding: 18px 20px; }
+  .fign .v { font-family: "Zilla Slab", serif; font-weight: 700; font-size: 2rem; line-height: 1;
+             font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .fign .v small { font-size: .95rem; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+  .fign .k { font-family: "JetBrains Mono", monospace; font-size: .68rem; letter-spacing: .1em;
+             text-transform: uppercase; color: var(--faint); margin-top: .55rem; }
+  .tw { overflow-x: auto; margin: 24px 0 8px; border: 1px solid var(--rule); background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: .875rem; }
+  th, td { padding: 8px 14px; text-align: right; white-space: nowrap;
+           font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--rule); }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { font-family: "JetBrains Mono", monospace; font-size: .68rem; letter-spacing: .07em;
+             text-transform: uppercase; color: var(--faint); font-weight: 500; background: var(--sunk); }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.hi td { background: var(--brass-soft); }
+  tr.hi td:first-child { font-weight: 600; }
+  td.bad { color: var(--rust); font-weight: 600; }
+  td.good { color: var(--depth); font-weight: 600; }
+  .cap { font-size: .85rem; color: var(--faint); max-width: 76ch; margin: 0 0 6px; }
+  figure { margin: 30px 0; }
+  svg.fig { width: 100%; height: auto; display: block; }
+  figcaption { font-size: .85rem; color: var(--muted); margin-top: 12px; max-width: 68ch; }
+  .fg-panel { fill: var(--sunk); stroke: var(--rule); }
+  .fg-ring  { fill: none; stroke: var(--depth); stroke-width: .7; opacity: .55; }
+  .fg-link  { stroke: var(--faint); stroke-width: .55; opacity: .75; }
+  .fg-pt    { fill: var(--muted); }
+  .fg-ctr   { fill: var(--brass); }
+  .fg-bar   { stroke: var(--fg); stroke-width: 2; }
+  .fg-h     { font-family: "JetBrains Mono", monospace; font-size: 12px; fill: var(--fg); font-weight: 500; }
+  .fg-s     { font-family: "JetBrains Mono", monospace; font-size: 10px; fill: var(--faint); }
+  .lad-bl   { stroke: var(--brass); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  .lad-bf   { fill: var(--brass); }
+  .lad-bt   { font-family: "JetBrains Mono", monospace; font-size: 12px; font-weight: 500; fill: var(--brass); }
+  .lad-dl   { stroke: var(--depth); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  .lad-df   { fill: var(--depth); opacity: .22; }
+  .lad-dt   { font-family: "JetBrains Mono", monospace; font-size: 12px; font-weight: 500; fill: var(--depth); }
+  .demo { border: 1px solid var(--rule); background: var(--surface); margin-top: 26px; }
+  .demo-bar { display: flex; flex-wrap: wrap; gap: 18px; align-items: center;
+              padding: 12px 16px; border-bottom: 1px solid var(--rule); }
+  .demo-bar label { font-family: "JetBrains Mono", monospace; font-size: .7rem; letter-spacing: .08em;
+                    text-transform: uppercase; color: var(--faint); display: flex; gap: 8px; align-items: center; }
+  .demo-bar select, .demo-bar input[type=range] { accent-color: var(--brass); }
+  .demo-bar select { font-family: "JetBrains Mono", monospace; font-size: .78rem; padding: 3px 6px;
+                     background: var(--bg); color: var(--fg); border: 1px solid var(--rule); border-radius: 3px; }
+  .demo-bar button { font-family: "JetBrains Mono", monospace; font-size: .78rem; padding: 4px 12px;
+                     background: var(--brass); color: var(--bg); border: 0; border-radius: 3px; cursor: pointer; }
+  #nc-canvas { display: block; width: 100%; height: 460px; touch-action: none; cursor: grab; }
+  #nc-canvas:active { cursor: grabbing; }
+  .readout { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); border-top: 1px solid var(--rule); }
+  .readout div { padding: 10px 16px; border-right: 1px solid var(--rule); }
+  .readout div:last-child { border-right: 0; }
+  .readout .v { font-family: "JetBrains Mono", monospace; font-size: 1.05rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .readout .k { font-family: "JetBrains Mono", monospace; font-size: .63rem; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  ul.tight { margin: 0 0 1.1em; padding-left: 1.15em; }
+  ul.tight li { margin-bottom: .42em; }
+  .refs { font-size: .9rem; } .refs li { margin-bottom: .7em; }
+  pre { background: var(--sunk); border: 1px solid var(--rule); padding: 16px 18px; overflow-x: auto;
+        font-family: "JetBrains Mono", monospace; font-size: .82rem; line-height: 1.6; margin: 20px 0; }
+  pre .c { color: var(--faint); }
+  .kicker { font-family: "Zilla Slab", serif; font-size: 1.3rem; font-weight: 600; line-height: 1.35;
+            border-left: 3px solid var(--depth); padding-left: 18px; margin: 30px 0; max-width: 60ch; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Resposta ao brief &#183; clustering geoespacial incremental</p>
+  <h1>NetCluster</h1>
+  <p class="deck">As tr&ecirc;s propriedades do brief s&atilde;o simultaneamente satisfaz&iacute;veis. A estrutura que faz isso existe na literatura desde 2001, tem nome, tem prova &mdash; e nunca foi empacotada para mapas. Este documento traz a pesquisa, a estrutura, uma implementa&ccedil;&atilde;o de refer&ecirc;ncia e as medi&ccedil;&otilde;es.</p>
+  <div class="rulebar"><div></div><div></div><div></div><div></div></div>
+</header>
+
+<section>
+  <p class="eyebrow">Veredito</p>
+  <div class="col">
+    <h2>N&atilde;o h&aacute; tens&atilde;o fundamental entre as tr&ecirc;s propriedades. H&aacute; uma lacuna de biblioteca.</h2>
+    <div class="verdict">
+      <p>A suspeita registrada na nota de honestidade do brief &mdash; de que atualiza&ccedil;&atilde;o incremental, qualidade geom&eacute;trica real e aus&ecirc;ncia de rebuild seriam mutuamente conflitantes &mdash; <strong>n&atilde;o se sustenta</strong>. O objeto que satisfaz as tr&ecirc;s ao mesmo tempo &eacute; uma <strong>hierarquia de <em>nets</em></strong> (tamb&eacute;m chamada <em>discrete center hierarchy</em>, <em>net-tree</em> ou <em>cover tree</em>) sobre uma m&eacute;trica <em>doubling</em> &mdash; e o plano de Web Mercator &eacute; uma m&eacute;trica doubling.</p>
+      <p>O resultado te&oacute;rico central &eacute; de 2001&ndash;2006 (geometria computacional / KDS). O caso totalmente din&acirc;mico com garantias foi fechado em 2019&ndash;2020. Nada disso chegou ao ecossistema de visualiza&ccedil;&atilde;o de mapas, que continua dividido entre rebuild peri&oacute;dico e grade fixa.</p>
+      <p>Para verificar isso na pr&aacute;tica, e n&atilde;o s&oacute; no papel, a estrutura foi implementada do zero em JavaScript (<code>netcluster</code>, ~700 linhas, zero depend&ecirc;ncias) e medida contra o <code>supercluster</code> nos mesmos dados.</p>
+    </div>
+  </div>
+
+  <div class="props">
+    <div class="prop">
+      <div class="n">PROPRIEDADE 1</div>
+      <h3>Atualiza&ccedil;&atilde;o incremental</h3>
+      <p>Mover 1 ponto custa <code>O(log &Delta;)</code> &mdash; independente de N. Medido: <strong>2,09 &micro;s</strong> com 500 mil pontos vivos, contra 877 ms de rebuild.</p>
+      <div class="verd">ATENDIDA</div>
+    </div>
+    <div class="prop">
+      <div class="n">PROPRIEDADE 2</div>
+      <h3>Proximidade real</h3>
+      <p>Nenhuma decis&atilde;o depende de borda de c&eacute;lula: a grade s&oacute; acelera busca. Contagem de clusters e raio ficam <strong>dentro de 1%</strong> do supercluster em todos os zooms.</p>
+      <div class="verd">ATENDIDA</div>
+    </div>
+    <div class="prop">
+      <div class="n">PROPRIEDADE 3</div>
+      <h3>Sem rebuild</h3>
+      <p>Os invariantes s&atilde;o restaurados localmente a cada opera&ccedil;&atilde;o. Ap&oacute;s <strong>5 milh&otilde;es</strong> de movimentos sem rebuild, a qualidade fica a 1% de um &iacute;ndice rec&eacute;m-constru&iacute;do.</p>
+      <div class="verd">ATENDIDA</div>
+    </div>
+  </div>
+
+  <div class="figs">
+    <div class="fign"><div class="v">2,09 <small>&micro;s</small></div><div class="k">mover 1 ponto &#183; N=500k</div></div>
+    <div class="fign"><div class="v">128.262&times;</div><div class="k">vs. rebuild &#183; N=100k</div></div>
+    <div class="fign"><div class="v">0,027</div><div class="k">clusters trocados por movimento</div></div>
+    <div class="fign"><div class="v">5.000.000</div><div class="k">movimentos sem rebuild</div></div>
+    <div class="fign"><div class="v">119 <small>MB</small></div><div class="k">&iacute;ndice de 500k (sc: 289 MB)</div></div>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Por que a ind&uacute;stria n&atilde;o achou</p>
+  <div class="col">
+    <h2>O problema muda de dificuldade conforme o que voc&ecirc; fixa</h2>
+    <p>Clustering din&acirc;mico tem duas formula&ccedil;&otilde;es que se parecem e se comportam de forma oposta:</p>
+    <p><strong>Fixar <em>k</em>.</strong> &quot;Mantenha 200 clusters e minimize o raio.&quot; Esta &eacute; genuinamente dif&iacute;cil no regime din&acirc;mico: um &uacute;nico ponto inserido no lugar certo pode reorganizar a solu&ccedil;&atilde;o inteira. A literatura gasta d&eacute;cadas em <code>O(k&#183;polylog)</code> por update e em limitar o <em>recourse</em> (quantos centros mudam por opera&ccedil;&atilde;o). O melhor conhecido para o caso totalmente din&acirc;mico ainda &eacute; caro e depende de <em>k</em>.</p>
+    <p><strong>Fixar o raio.</strong> &quot;Mantenha clusters de 40&nbsp;px, em cada zoom.&quot; Esta &eacute; f&aacute;cil. Um conjunto <em>r</em>-separado maximal (um <em>r</em>-net) &eacute; mantido por regras puramente locais, porque no plano cabem s&oacute; <code>O(1)</code> pontos <em>r</em>-separados dentro de qualquer bola de raio <em>2r</em>.</p>
+    <p class="kicker">Um mapa nunca pediu <em>k</em> clusters. Ele pede clusters de 40&nbsp;px por n&iacute;vel de zoom &mdash; e os n&iacute;veis de zoom j&aacute; s&atilde;o pot&ecirc;ncias de dois.</p>
+    <p>Essa &eacute; a virada. A pilha de zoom de um mapa <em>j&aacute; &eacute;</em> uma escada de escalas geom&eacute;tricas <code>r, r/2, r/4, &hellip;</code>, que &eacute; exatamente o eixo em que uma hierarquia de nets &eacute; definida. O problema que a ind&uacute;stria estava tentando resolver (k-means/k-center din&acirc;mico) &eacute; mais dif&iacute;cil que o problema que ela realmente tem.</p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Pergunta 1 &#183; existe algoritmo publicado?</p>
+  <div class="col">
+    <h2>Sim. E &eacute; mais antigo do que o brief supunha</h2>
+    <p>Existem duas linhagens. A que o brief procurava (&quot;fully dynamic clustering com garantias polilogar&iacute;tmicas&quot;, &uacute;ltimos 2&ndash;5 anos) existe e est&aacute; ativa. Mas a linhagem que resolve <em>este</em> problema espec&iacute;fico &mdash; pontos que se movem continuamente no plano, hierarquia por escala &mdash; vem da geometria computacional dos anos 2000 e j&aacute; nasceu resolvida.</p>
+  </div>
+  <p class="cap">&Delta; = <em>aspect ratio</em> (maior dist&acirc;ncia / menor dist&acirc;ncia). Em um mapa, log&nbsp;&Delta; = n&uacute;mero de n&iacute;veis de zoom &asymp; 17 &mdash; uma constante.</p>
+  <div class="tw">
+  <table>
+    <thead><tr><th>Resultado</th><th>Ano</th><th>Garantia de qualidade</th><th>Update</th><th>Consulta</th></tr></thead>
+    <tbody>
+      <tr><td>Discrete Mobile Centers &mdash; Gao, Guibas, Hershberger, Zhang, Zhu</td><td>2001</td><td>cobertura por raio r; n&ordm; de centros O(1)-aprox. do m&iacute;nimo</td><td>KDS respons&iacute;vel, sem rearranjo global</td><td>local</td></tr>
+      <tr><td>Navigating Nets &mdash; Krauthgamer &amp; Lee</td><td>2004</td><td>(1+&epsilon;)-NN em m&eacute;trica doubling</td><td>O(log &Delta; log log &Delta;)</td><td>O(log &Delta;) + &epsilon;<sup>-O(1)</sup></td></tr>
+      <tr class="hi"><td>Deformable Spanners &mdash; Gao, Guibas, Nguyen</td><td>2004</td><td>hierarquia de centros discretos; k-center 8-aprox. <em>para todo k ao mesmo tempo</em></td><td>O(log &Delta;) pior caso, inser&ccedil;&atilde;o, remo&ccedil;&atilde;o <em>e movimento cont&iacute;nuo</em></td><td>O(log &Delta;)</td></tr>
+      <tr><td>Cover Trees &mdash; Beygelzimer, Kakade, Langford</td><td>2006</td><td>NN exata; espa&ccedil;o O(n)</td><td>O(c<sup>6</sup> log n)</td><td>O(c<sup>12</sup> log n)</td></tr>
+      <tr><td>Dynamic net tree &mdash; Cole &amp; Gottlieb</td><td>2006</td><td>(1+&epsilon;)-NN</td><td>O(log n), independente de &Delta;</td><td>O(log n) + &epsilon;<sup>-O(1)</sup></td></tr>
+      <tr class="hi"><td>Fully dynamic hierarchical k-center &mdash; Schmidt &amp; Sohler</td><td>2019</td><td>16-aprox. <em>pointwise</em> em todos os n&iacute;veis da hierarquia</td><td>ins. O(log &Delta; log n) / rem. O(log&sup2; &Delta; log n)</td><td>O(log &Delta; + log n)</td></tr>
+      <tr><td>Fully dynamic k-center in doubling metrics &mdash; Goranci, Henzinger, Leniowski, Schulz, Svozil</td><td>2020</td><td>(2+&epsilon;), determin&iacute;stico</td><td>polylog, <em>independente de k</em></td><td>polylog</td></tr>
+      <tr><td>Optimal fully dynamic k-center &mdash; Bateni et al. (SODA&nbsp;23)</td><td>2023</td><td>(2+&epsilon;) &oacute;timo</td><td>O(k &#183; polylog(n,&Delta;))</td><td>&mdash;</td></tr>
+      <tr><td>Consistent k-center com recourse &oacute;timo (SODA&nbsp;24/25)</td><td>2024</td><td>O(1)-aprox. com O(1) mudan&ccedil;as de centro por update</td><td>&Otilde;(k)</td><td>&mdash;</td></tr>
+      <tr><td>DynHAC &mdash; HAC din&acirc;mico (average linkage)</td><td>2025</td><td>(1+&epsilon;)-aprox. do dendrograma</td><td>emp&iacute;rico, sublinear</td><td>&mdash;</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="col">
+    <p style="margin-top:1.2em">Dois desses resultados merecem destaque por serem, essencialmente, o brief resolvido:</p>
+    <ul class="tight">
+      <li><strong>Gao, Guibas &amp; Nguyen (2004)</strong> mant&ecirc;m uma <em>discrete center hierarchy</em> &mdash; conjuntos aninhados S<sub>0</sub> &supe; S<sub>1</sub> &supe; &hellip; com separa&ccedil;&atilde;o &ge; 2<sup>i</sup> e ancestral a dist&acirc;ncia &le; 2<sup>i+1</sup> &mdash; sob <em>movimento cont&iacute;nuo dos pontos</em>, com as quatro propriedades de uma boa KDS, incluindo <em>suavidade</em>: rearranjos globais s&atilde;o evitados por constru&ccedil;&atilde;o. Os invariantes deles s&atilde;o, item por item, os invariantes implementados aqui.</li>
+      <li><strong>Schmidt &amp; Sohler (2019)</strong> mostram que &eacute; poss&iacute;vel manter a <em>hierarquia inteira</em> (todos os n&iacute;veis, n&atilde;o um k) sob inser&ccedil;&otilde;es e remo&ccedil;&otilde;es em tempo polilog, com aproxima&ccedil;&atilde;o pointwise constante. O fator <code>log n</code> nos limites deles vem apenas das &aacute;rvores bin&aacute;rias usadas para responder &quot;exatamente k clusters&quot;; um mapa n&atilde;o precisa disso, e sem elas o update fica <strong>independente de n</strong>.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Pergunta 2 &#183; implementa&ccedil;&otilde;es pr&aacute;ticas</p>
+  <div class="col">
+    <h2>N&atilde;o, para mapas. A lacuna &eacute; real</h2>
+    <p>A busca n&atilde;o encontrou nenhuma biblioteca de clustering geoespacial para visualiza&ccedil;&atilde;o que mantenha a estrutura de forma incremental. O que existe:</p>
+    <ul class="tight">
+      <li><strong>C&oacute;digo das estruturas, fora do dom&iacute;nio de mapas.</strong> Cover trees t&ecirc;m implementa&ccedil;&otilde;es maduras (mlpack, entre outras), mas s&atilde;o expostas como &iacute;ndice de vizinho mais pr&oacute;ximo &mdash; a hierarquia de clusters que elas j&aacute; cont&ecirc;m n&atilde;o &eacute; exposta como API.</li>
+      <li><strong>Goranci et al. (2020)</strong> t&ecirc;m estudo experimental extenso, comparando com o estado da arte em qualidade e tempo &mdash; ou seja, a viabilidade pr&aacute;tica j&aacute; foi demonstrada, s&oacute; que para k-center gen&eacute;rico, n&atilde;o para tiles.</li>
+      <li><strong>supercluster</strong> &eacute; expl&iacute;cita e deliberadamente est&aacute;tica: o &iacute;ndice &eacute; imut&aacute;vel depois do <code>load()</code>, porque &eacute; constru&iacute;do sobre <code>kdbush</code>, uma KD-tree est&aacute;tica. Os pedidos de update incremental s&atilde;o de 2016 e seguem abertos (issues #19, #126, #237).</li>
+      <li>As alternativas populares (<code>leaflet.markercluster</code>, <code>@googlemaps/markerclusterer</code>, <code>marker-cluster</code>) reagrupam o conjunto vis&iacute;vel a cada mudan&ccedil;a; s&atilde;o r&aacute;pidas porque N vis&iacute;vel &eacute; pequeno, n&atilde;o porque sejam incrementais.</li>
+    </ul>
+    <p>Ou seja: a resposta honesta &agrave; pergunta 2 do brief era &quot;n&atilde;o&quot;. &Eacute; por isso que este documento vem com uma implementa&ccedil;&atilde;o junto.</p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Pergunta 3 &#183; sistemas de produ&ccedil;&atilde;o</p>
+  <div class="col">
+    <h2>Todos documentam grade hier&aacute;rquica ou rebuild. Nenhum documenta outra coisa</h2>
+    <p>A observa&ccedil;&atilde;o emp&iacute;rica do brief est&aacute; correta, e vale a pena entender por qu&ecirc;: quase todos esses sistemas resolvem um problema <em>diferente</em> do de desenhar marcadores.</p>
+    <ul class="tight">
+      <li><strong>Uber H3</strong> &eacute; um &iacute;ndice hier&aacute;rquico hexagonal para <em>dispatch</em>, pre&ccedil;o din&acirc;mico e an&aacute;lise espacial &mdash; casar oferta e demanda por c&eacute;lula. Nesse uso, a c&eacute;lula &eacute; a unidade sem&acirc;ntica, e o artefato de borda n&atilde;o importa (hex&aacute;gonos at&eacute; reduzem, mas n&atilde;o eliminam, a distor&ccedil;&atilde;o de vizinhan&ccedil;a).</li>
+      <li><strong>Tile38</strong> &eacute; um &iacute;ndice espacial em mem&oacute;ria para <code>NEARBY</code>/<code>WITHIN</code>/<code>INTERSECTS</code> e geofencing em tempo real, com updates O(log n) &mdash; mas n&atilde;o oferece agrega&ccedil;&atilde;o por zoom: o clustering fica com o cliente.</li>
+      <li><strong>Elasticsearch/Kibana</strong> usa <code>geotile_grid</code> ou <code>geohex_grid</code> e devolve o <em>centroide ponderado</em> por c&eacute;lula. Isto &eacute; exatamente a linha &quot;grid fixo&quot; da tabela do brief, inclusive nos artefatos: o agrupamento &eacute; decidido pela c&eacute;lula do tile, e o centroide s&oacute; disfar&ccedil;a a borda.</li>
+      <li><strong>deck.gl e kepler.gl</strong> delegam clustering ao pr&oacute;prio supercluster. A camada &eacute; GPU, o agrupamento n&atilde;o.</li>
+    </ul>
+    <p>Nenhuma das fontes p&uacute;blicas examinadas descreve manuten&ccedil;&atilde;o incremental de uma hierarquia de clusters por proximidade real. A conclus&atilde;o &eacute; que a pr&aacute;tica da ind&uacute;stria reflete o que est&aacute; dispon&iacute;vel em biblioteca, n&atilde;o um limite do que &eacute; poss&iacute;vel.</p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Pergunta 4 &#183; vocabul&aacute;rio</p>
+  <div class="col">
+    <h2>Os termos candidatos do brief levam ao lugar errado</h2>
+    <p>Esta pode ser a parte mais &uacute;til do relat&oacute;rio para buscas futuras. Dos termos sugeridos, os que conduzem ao resultado certo s&atilde;o poucos:</p>
+  </div>
+  <div class="tw">
+  <table>
+    <thead><tr><th>Termo</th><th>Leva a</th><th>Veredito</th></tr></thead>
+    <tbody>
+      <tr class="hi"><td>hierarchical <em>net</em> / <em>r</em>-net hierarchy</td><td>a estrutura correta, direto</td><td class="good">use este</td></tr>
+      <tr class="hi"><td>net-tree, cover tree, navigating nets</td><td>as tr&ecirc;s variantes da mesma ideia</td><td class="good">use estes</td></tr>
+      <tr class="hi"><td>discrete center hierarchy</td><td>o nome usado na literatura de KDS / pontos m&oacute;veis</td><td class="good">use este</td></tr>
+      <tr class="hi"><td>doubling metric / doubling dimension</td><td>a hip&oacute;tese que torna tudo polilog</td><td class="good">termo-chave</td></tr>
+      <tr><td>fully dynamic k-center clustering</td><td>a literatura certa, mas na formula&ccedil;&atilde;o dif&iacute;cil (k fixo)</td><td>&uacute;til, com ressalva</td></tr>
+      <tr><td>kinetic data structure (KDS)</td><td>o regime de pontos em movimento cont&iacute;nuo</td><td>&uacute;til</td></tr>
+      <tr><td>incremental hierarchical clustering</td><td>HAC/dendrograma, m&eacute;trica arbitr&aacute;ria, caro</td><td class="bad">desvia</td></tr>
+      <tr><td>coreset streaming spatial clustering</td><td>aproximar k-means com pouca mem&oacute;ria; n&atilde;o resolve dele&ccedil;&atilde;o barata</td><td class="bad">desvia</td></tr>
+      <tr><td>dynamic R-tree rebalancing</td><td>literatura de &iacute;ndice, n&atilde;o de agrupamento</td><td class="bad">desvia</td></tr>
+      <tr><td>Bentley&ndash;Saxe logarithmic method</td><td>transformar est&aacute;tico em incremental; dele&ccedil;&atilde;o continua sendo o problema</td><td class="bad">beco sem sa&iacute;da</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="col">
+    <p style="margin-top:1.2em">A frase de busca que resolve o brief em um passo &eacute; <em>&quot;dynamically maintaining a hierarchy of nets in a doubling metric&quot;</em>. O termo &quot;clustering&quot; atrapalha: na comunidade que resolveu o problema, isto &eacute; chamado de <em>proximity structure</em>, e o clustering aparece como corol&aacute;rio.</p>
+  </div>
+</section>
+
+<hr class="sep">
+
+<section>
+  <p class="eyebrow">A estrutura</p>
+  <div class="col">
+    <h2>Uma hierarquia de nets, ancorada nos n&iacute;veis de zoom</h2>
+    <p>Para cada zoom <em>z</em>, o &iacute;ndice mant&eacute;m um conjunto de centros <code>C<sub>z</sub></code> na escala <code>r<sub>z</sub> = radius / (extent &#183; 2<sup>z</sup>)</code> &mdash; a mesma escala do supercluster, isto &eacute;, 40&nbsp;px de tela naquele zoom. Tr&ecirc;s invariantes, e s&oacute; tr&ecirc;s:</p>
+    <ul class="tight">
+      <li><strong>Aninhamento.</strong> <code>C<sub>0</sub> &sube; C<sub>1</sub> &sube; &hellip; &sube; C<sub>maxZoom</sub> &sube; P</code>. Um ponto guarda apenas o n&iacute;vel <em>mais grosso</em> em que &eacute; centro; nos demais ele &eacute; centro por consequ&ecirc;ncia.</li>
+      <li><strong>Separa&ccedil;&atilde;o.</strong> Dois centros distintos de <code>C<sub>z</sub></code> est&atilde;o a mais de <code>r<sub>z</sub></code> um do outro. Este invariante nunca &eacute; relaxado &mdash; &eacute; ele que limita quantos marcadores cabem na tela.</li>
+      <li><strong>Cobertura.</strong> Todo membro de <code>C<sub>z+1</sub></code> que n&atilde;o est&aacute; em <code>C<sub>z</sub></code> tem um pai em <code>C<sub>z</sub></code> a dist&acirc;ncia &le; <code>r<sub>z</sub></code>.</li>
+    </ul>
+    <p>Dessas tr&ecirc;s regras saem as duas garantias que interessam ao mapa, v&aacute;lidas <em>em qualquer instante</em>, sem nenhum passo de reprocessamento:</p>
+    <ul class="tight">
+      <li><strong>Raio.</strong> Somando a s&eacute;rie geom&eacute;trica dos saltos pai&ndash;filho, todo ponto est&aacute; a no m&aacute;ximo <code>2&#183;r<sub>z</sub></code> do centro que o representa no zoom <em>z</em>.</li>
+      <li><strong>Contagem.</strong> Como <code>C<sub>z</sub></code> &eacute; <code>r<sub>z</sub></code>-separado, nenhuma bola de raio <code>r<sub>z</sub>/2</code> cont&eacute;m dois centros: o n&uacute;mero de clusters nunca excede o de uma solu&ccedil;&atilde;o &oacute;tima com metade do raio. &Eacute; a garantia bicrit&eacute;rio cl&aacute;ssica de <em>r</em>-nets.</li>
+    </ul>
+  </div>
+
+  <figure>
+    <!--FIGNETS-->
+    <figcaption><strong>Sa&iacute;da real do &iacute;ndice</strong>, n&atilde;o ilustra&ccedil;&atilde;o: 56 dispositivos em uma &aacute;rea de ~3&nbsp;km, indexados uma &uacute;nica vez e consultados em tr&ecirc;s zooms. Pontos em &acirc;mbar s&atilde;o centros; c&iacute;rculos s&atilde;o o raio de exclus&atilde;o <code>r<sub>z</sub></code>; linhas ligam cada dispositivo ao centro que o representa. Ao descer um zoom, <code>r</code> cai pela metade e o conjunto de centros s&oacute; cresce &mdash; os n&iacute;veis s&atilde;o aninhados, o que faz o &quot;expandir cluster ao dar zoom&quot; ser exato em vez de recalculado.</figcaption>
+  </figure>
+
+  <div class="col">
+    <h3 style="margin-top:1.6em">Por que mover um ponto &eacute; barato</h3>
+    <p>Um dispositivo que anda 12 metros entre dois reports n&atilde;o pode violar a cobertura de um cluster de 3&nbsp;km. Como os raios caem por pot&ecirc;ncias de dois, o n&uacute;mero de n&iacute;veis que um deslocamento &delta; consegue quebrar &eacute; <code>~log(&delta;/r<sub>maxZoom</sub>)</code> &mdash; independente de N e, na pr&aacute;tica, zero.</p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 620 172" class="fig" role="img" aria-label="Eixo logaritmico dos raios de cluster, de 48 metros no zoom 16 ate 3132 quilometros no zoom 0. Um deslocamento tipico de 12 metros entre reports fica abaixo de todos os raios e nao afeta nenhum nivel; um salto de 1,2 quilometro atinge apenas os cinco niveis mais finos.">
+      <line class="fg-bar" x1="40" y1="112" x2="575" y2="112"/>
+      <g class="fg-s">
+        <line class="fg-link" x1="101" y1="104" x2="101" y2="120"/><text x="101" y="134" text-anchor="middle">48 m</text><text x="101" y="100" text-anchor="middle" class="fg-h">z16</text>
+        <line class="fg-link" x1="155" y1="104" x2="155" y2="120"/><text x="155" y="134" text-anchor="middle">191 m</text><text x="155" y="100" text-anchor="middle" class="fg-h">z14</text>
+        <line class="fg-link" x1="210" y1="104" x2="210" y2="120"/><text x="210" y="134" text-anchor="middle">765 m</text><text x="210" y="100" text-anchor="middle" class="fg-h">z12</text>
+        <line class="fg-link" x1="264" y1="104" x2="264" y2="120"/><text x="264" y="134" text-anchor="middle">3,1 km</text><text x="264" y="100" text-anchor="middle" class="fg-h">z10</text>
+        <line class="fg-link" x1="318" y1="104" x2="318" y2="120"/><text x="318" y="134" text-anchor="middle">12 km</text><text x="318" y="100" text-anchor="middle" class="fg-h">z8</text>
+        <line class="fg-link" x1="372" y1="104" x2="372" y2="120"/><text x="372" y="134" text-anchor="middle">49 km</text><text x="372" y="100" text-anchor="middle" class="fg-h">z6</text>
+        <line class="fg-link" x1="426" y1="104" x2="426" y2="120"/><text x="426" y="134" text-anchor="middle">196 km</text><text x="426" y="100" text-anchor="middle" class="fg-h">z4</text>
+        <line class="fg-link" x1="480" y1="104" x2="480" y2="120"/><text x="480" y="134" text-anchor="middle">783 km</text><text x="480" y="100" text-anchor="middle" class="fg-h">z2</text>
+        <line class="fg-link" x1="535" y1="104" x2="535" y2="120"/><text x="535" y="134" text-anchor="middle">3132 km</text><text x="535" y="100" text-anchor="middle" class="fg-h">z0</text>
+      </g>
+      <text class="fg-s" x="40" y="158">raio de cluster r&#8332; &#8212; escala logar&iacute;tmica</text>
+      <line class="lad-bl" x1="47" y1="26" x2="47" y2="112"/>
+      <rect class="lad-bf" x="40" y="20" width="7" height="12"/>
+      <text class="lad-bt" x="56" y="24">&delta; = 12 m (report de 1 s)</text>
+      <text class="fg-s" x="56" y="38">nenhum n&iacute;vel pode mudar &#183; s&oacute; soma incremental &#8594; 96&ndash;98% dos movimentos</text>
+      <line class="lad-dl" x1="209" y1="66" x2="209" y2="112"/>
+      <rect class="lad-df" x="40" y="60" width="169" height="12"/>
+      <text class="lad-dt" x="218" y="64">&delta; = 1,2 km (salto de GPS)</text>
+      <text class="fg-s" x="218" y="78">atinge s&oacute; os 5 n&iacute;veis mais finos &#183; os 12 restantes seguem v&aacute;lidos</text>
+    </svg>
+    <figcaption>O custo estrutural de um movimento cresce com o <em>logaritmo da dist&acirc;ncia percorrida</em>, n&atilde;o com o n&uacute;mero de pontos no sistema. &Eacute; por isso que rastreamento em tempo real &eacute; o caso f&aacute;cil desta estrutura, e n&atilde;o o dif&iacute;cil.</figcaption>
+  </figure>
+
+  <div class="col">
+    <h3>As opera&ccedil;&otilde;es</h3>
+    <p><strong>Inserir.</strong> Varre os n&iacute;veis do mais fino para o mais grosso e para no primeiro n&iacute;vel <em>z*</em> cujo net j&aacute; cobre o ponto; o ponto vira centro em <em>z*+1</em>, filho do centro mais pr&oacute;ximo. A varredura de baixo para cima importa: &quot;estar coberto&quot; n&atilde;o &eacute; mon&oacute;tono no zoom (descer o n&iacute;vel encolhe o raio, mas aumenta o conjunto de centros), e parar cedo pelo lado grosso deixa passar viola&ccedil;&otilde;es de separa&ccedil;&atilde;o. Foi exatamente esse o primeiro bug pego pelo verificador de invariantes.</p>
+    <p><strong>Remover.</strong> Os filhos &oacute;rf&atilde;os s&atilde;o re-hospedados um a um; quem n&atilde;o encontra pai &eacute; promovido a um n&iacute;vel mais grosso, em cascata. O n&uacute;mero de filhos de qualquer n&oacute; &eacute; <code>O(1)</code> por empacotamento no plano &mdash; medido: <strong>3,29 re-hospedagens por remo&ccedil;&atilde;o</strong>.</p>
+    <p><strong>Mover.</strong> Testa apenas o que pode ter quebrado: a cobertura pelo pai, a cobertura dos pr&oacute;prios filhos e a separa&ccedil;&atilde;o nos n&iacute;veis <code>&ge; z</code> do pr&oacute;prio ponto. Passando, atualiza as somas ao longo da cadeia de ancestrais e nada mais muda. Falhando, o reparo &eacute; local: desconecta, re-hospeda &oacute;rf&atilde;os, reinsere.</p>
+    <p><strong>Consultar.</strong> Percorre a &aacute;rvore de cima para baixo a partir de <code>C<sub>0</sub></code>, podando toda sub&aacute;rvore cuja bola de raio <code>2&#183;r</code> n&atilde;o toca o viewport. O custo &eacute; proporcional ao n&uacute;mero de clusters devolvidos, n&atilde;o a N nem &agrave; &aacute;rea do bbox.</p>
+    <p>Os agregados (contagem e somas de coordenadas) s&atilde;o mantidos em <strong>ponto fixo inteiro</strong>, n&atilde;o em ponto flutuante: somas e subtra&ccedil;&otilde;es s&atilde;o exatamente invers&iacute;veis, ent&atilde;o um &iacute;ndice que roda por meses n&atilde;o acumula deriva num&eacute;rica nos centroides.</p>
+  </div>
+
+  <p class="cap" style="margin-top:2em">Complexidade, no formato pedido pelo crit&eacute;rio de sucesso do brief. &Delta; = raz&atilde;o de escalas = 2<sup>maxZoom</sup>; log&nbsp;&Delta; = 17 n&iacute;veis. K = clusters devolvidos.</p>
+  <div class="tw">
+  <table>
+    <thead><tr><th>Opera&ccedil;&atilde;o</th><th>Complexidade</th><th>Depende de N?</th><th>Depende de D?</th><th>Medido (N = 500.000)</th></tr></thead>
+    <tbody>
+      <tr><td>inserir 1 ponto</td><td>O(log &Delta;)</td><td>n&atilde;o</td><td>n&atilde;o</td><td>2,07 &micro;s</td></tr>
+      <tr class="hi"><td>mover 1 ponto</td><td>O(log(&delta;/r<sub>min</sub>)) amortizado, O(log &Delta;) pior caso</td><td>n&atilde;o</td><td>n&atilde;o &mdash; melhora com D</td><td>2,09 &micro;s</td></tr>
+      <tr><td>remover 1 ponto</td><td>O(log&sup2; &Delta;) pior caso</td><td>n&atilde;o</td><td>n&atilde;o</td><td>7,8 &micro;s</td></tr>
+      <tr><td>clusters no viewport, zoom z</td><td>O(K)</td><td>n&atilde;o</td><td>n&atilde;o</td><td>0,02 ms (~150 clusters)</td></tr>
+      <tr><td>representante de um ponto no zoom z</td><td>O(log &Delta;)</td><td>n&atilde;o</td><td>n&atilde;o</td><td>&mdash;</td></tr>
+      <tr><td>zoom de expans&atilde;o / filhos / folhas</td><td>O(1) / O(filhos) / O(tamanho)</td><td>n&atilde;o</td><td>n&atilde;o</td><td>&mdash;</td></tr>
+      <tr><td>mem&oacute;ria</td><td>O(N &#183; &Sigma;<sub>z</sub>|C<sub>z</sub>|/N), constante medida 4,2</td><td>linear</td><td>cai com D</td><td>119 MB</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<hr class="sep">
+
+<section>
+  <p class="eyebrow">Evid&ecirc;ncia &#183; 1</p>
+  <div class="col">
+    <h2>Custo de refletir um movimento</h2>
+    <p>Frota sint&eacute;tica com densidade de &aacute;reas metropolitanas reais, dispositivos com velocidade e rumo pr&oacute;prios, ~12&nbsp;m por report. Mesma m&aacute;quina, mesmo processo Node, mesmos par&acirc;metros (<code>radius&nbsp;40</code>, <code>maxZoom&nbsp;16</code>).</p>
+  </div>
+  <div class="tw">
+  <table>
+    <thead><tr><th>N</th><th>rebuild supercluster</th><th>build netcluster</th><th>mover 1 ponto</th><th>movimentos/s</th><th>caminho r&aacute;pido</th><th>ganho</th></tr></thead>
+    <tbody>
+      <tr><td>10.000</td><td>29,1 ms</td><td>24,7 ms</td><td>1,59 &micro;s</td><td>628.563</td><td>100%</td><td class="good">18.270&times;</td></tr>
+      <tr class="hi"><td>100.000</td><td>181,8 ms</td><td>176,6 ms</td><td>1,42 &micro;s</td><td>705.322</td><td>99%</td><td class="good">128.262&times;</td></tr>
+      <tr><td>1.000.000</td><td>1.588 ms</td><td>2.328 ms</td><td>2,95 &micro;s</td><td>338.661</td><td>93%</td><td class="good">537.896&times;</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="cap">Construir o &iacute;ndice ponto a ponto custa o mesmo que o <code>load()</code> em lote do supercluster at&eacute; 100 mil pontos &mdash; ou seja, n&atilde;o se paga um pre&ccedil;o de partida pela dinamicidade. A consulta de viewport tamb&eacute;m empata: 0,021 ms contra 0,023 ms em z10 com 1 milh&atilde;o de pontos, e 2,5 ms contra 3,3 ms em z14.</p>
+</section>
+
+<section>
+  <p class="eyebrow">Evid&ecirc;ncia &#183; 2</p>
+  <div class="col">
+    <h2>Qualidade do agrupamento</h2>
+    <p>Esta &eacute; a propriedade 2 do brief, medida. Para os mesmos 50.000 pontos, compara-se o agrupamento produzido pelas tr&ecirc;s abordagens. <strong>vizinhos separados</strong> conta os pares de pontos a menos de 10&nbsp;px que acabaram em clusters diferentes &mdash; &eacute; a medida direta do artefato de borda de c&eacute;lula. <strong>menor dist&acirc;ncia entre marcadores</strong> mede colis&atilde;o visual.</p>
+  </div>
+  <div class="tw">
+  <table>
+    <thead><tr><th>zoom</th><th>m&eacute;todo</th><th>clusters</th><th>raio m&eacute;dio</th><th>p95</th><th>m&aacute;x</th><th>vizinhos separados</th><th>menor dist. entre marcadores</th></tr></thead>
+    <tbody>
+      <tr class="hi"><td>6</td><td>netcluster</td><td>2.300</td><td>18,8 px</td><td>37,3</td><td>72,8</td><td>0,1%</td><td>19,7 px</td></tr>
+      <tr><td>6</td><td>supercluster</td><td>2.318</td><td>20,6 px</td><td>41,9</td><td>74,4</td><td>0,0%</td><td>22,2 px</td></tr>
+      <tr><td>6</td><td>grade fixa</td><td>3.978</td><td>12,2 px</td><td>22,8</td><td>37,2</td><td class="bad">1,1%</td><td class="bad">2,0 px</td></tr>
+      <tr class="hi"><td>10</td><td>netcluster</td><td>14.145</td><td>17,0 px</td><td>37,9</td><td>61,8</td><td>1,5%</td><td>14,6 px</td></tr>
+      <tr><td>10</td><td>supercluster</td><td>14.128</td><td>16,9 px</td><td>38,2</td><td>62,4</td><td>1,2%</td><td>20,3 px</td></tr>
+      <tr><td>10</td><td>grade fixa</td><td>20.191</td><td>10,2 px</td><td>22,2</td><td>35,8</td><td class="bad">14,9%</td><td class="bad">1,8 px</td></tr>
+      <tr class="hi"><td>12</td><td>netcluster</td><td>37.877</td><td>6,1 px</td><td>21,7</td><td>50,5</td><td>0,0%</td><td>24,7 px</td></tr>
+      <tr><td>12</td><td>supercluster</td><td>37.851</td><td>6,1 px</td><td>21,9</td><td>51,4</td><td>0,0%</td><td>22,1 px</td></tr>
+      <tr><td>12</td><td>grade fixa</td><td>44.876</td><td>2,1 px</td><td>14,4</td><td>31,1</td><td class="bad">22,6%</td><td class="bad">0,9 px</td></tr>
+      <tr class="hi"><td>14</td><td>netcluster</td><td>48.877</td><td>0,6 px</td><td>0,0</td><td>37,1</td><td>0,0%</td><td>32,4 px</td></tr>
+      <tr><td>14</td><td>supercluster</td><td>48.873</td><td>0,6 px</td><td>0,0</td><td>37,1</td><td>0,0%</td><td>30,5 px</td></tr>
+      <tr><td>14</td><td>grade fixa</td><td>49.641</td><td>0,2 px</td><td>0,0</td><td>25,3</td><td class="bad">21,7%</td><td class="bad">3,5 px</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="cap">A grade fixa parece ter raio menor porque produz clusters menores &mdash; e muito mais deles: <strong>43% mais marcadores</strong> em z10 para o mesmo par&acirc;metro de raio, com <strong>15&ndash;23% dos vizinhos pr&oacute;ximos rasgados</strong> por bordas de c&eacute;lula e marcadores desenhados a menos de 2&nbsp;px uns dos outros. &Eacute; exatamente o artefato que a linha &quot;grid fixo&quot; da tabela do brief descrevia. netcluster e supercluster s&atilde;o indistingu&iacute;veis dentro do ru&iacute;do.</p>
+</section>
+
+<section>
+  <p class="eyebrow">Evid&ecirc;ncia &#183; 3</p>
+  <div class="col">
+    <h2>5 milh&otilde;es de movimentos sem reconstruir nada</h2>
+    <p>100.000 dispositivos, 50 ciclos completos da frota. A cada milh&atilde;o de movimentos, o &iacute;ndice vivo &eacute; comparado com um &iacute;ndice <em>rec&eacute;m-constru&iacute;do</em> sobre as mesmas posi&ccedil;&otilde;es &mdash; o padr&atilde;o-ouro que o rebuild peri&oacute;dico entregaria.</p>
+  </div>
+  <div class="tw">
+  <table>
+    <thead><tr><th>movimentos</th><th>clusters (vivo)</th><th>raio m&eacute;dio (vivo)</th><th>clusters (reconstru&iacute;do)</th><th>raio m&eacute;dio (reconstru&iacute;do)</th><th>diferen&ccedil;a</th><th>trocas de cluster / movimento</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td>21.995</td><td>18,6 px</td><td>21.995</td><td>18,6 px</td><td>&mdash;</td><td>&mdash;</td></tr>
+      <tr><td>1.000.000</td><td>21.857</td><td>19,1 px</td><td>22.000</td><td>18,6 px</td><td>0,7%</td><td>0,030</td></tr>
+      <tr><td>2.000.000</td><td>21.784</td><td>19,4 px</td><td>21.991</td><td>18,6 px</td><td>0,9%</td><td>0,029</td></tr>
+      <tr><td>3.000.000</td><td>21.720</td><td>19,6 px</td><td>21.977</td><td>18,7 px</td><td>1,2%</td><td>0,027</td></tr>
+      <tr><td>4.000.000</td><td>21.731</td><td>19,7 px</td><td>21.976</td><td>18,7 px</td><td>1,1%</td><td>0,027</td></tr>
+      <tr class="hi"><td>5.000.000</td><td>21.715</td><td>19,7 px</td><td>21.980</td><td>18,7 px</td><td>1,2%</td><td>0,027</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="cap">A diferen&ccedil;a <em>estabiliza</em> em torno de 1% em vez de crescer &mdash; a estrutura converge para um regime estacion&aacute;rio, ela n&atilde;o se degrada. O throughput tamb&eacute;m fica plano (514k &#8594; 637k movimentos/s do primeiro ao &uacute;ltimo ciclo). E 0,027 troca de cluster por movimento significa que o mapa fica visualmente est&aacute;vel: um marcador muda de composi&ccedil;&atilde;o a cada ~37 reports, n&atilde;o a cada frame.</p>
+</section>
+
+<section>
+  <p class="eyebrow">Evid&ecirc;ncia &#183; 4</p>
+  <div class="col">
+    <h2>Hora do rush: onde a heur&iacute;stica quebra e o invariante n&atilde;o</h2>
+    <p>O teste anterior &eacute; generoso com heur&iacute;sticas: um passeio aleat&oacute;rio nunca <em>funde</em> multid&otilde;es. Aqui, 40% de 100.000 dispositivos convergem para 20 locais. Um clustering guloso incremental (&quot;anexe ao cluster mais pr&oacute;ximo, crie um novo se n&atilde;o houver&quot;) sabe dividir um aglomerado, mas nunca sabe fundir dois &mdash; ele n&atilde;o revisita decis&otilde;es passadas.</p>
+  </div>
+  <div class="tw">
+  <table>
+    <thead><tr><th>fase</th><th>m&eacute;todo</th><th>clusters</th><th>raio m&eacute;dio</th><th>raio m&aacute;x</th><th>marcadores colidindo</th><th>menor dist&acirc;ncia</th></tr></thead>
+    <tbody>
+      <tr><td>disperso</td><td>netcluster (vivo)</td><td>21.995</td><td>18,6 px</td><td>63,7</td><td>0%</td><td>16,0 px</td></tr>
+      <tr><td>disperso</td><td>guloso incremental (vivo)</td><td>22.630</td><td>15,9 px</td><td>54,3</td><td>0%</td><td>25,4 px</td></tr>
+      <tr><td>convergindo</td><td>netcluster (vivo)</td><td>24.688</td><td>18,3 px</td><td>73,2</td><td>0%</td><td>12,8 px</td></tr>
+      <tr><td>convergindo</td><td>guloso incremental (vivo)</td><td>29.070</td><td>15,1 px</td><td>56,3</td><td class="bad">6,8%</td><td class="bad">0,0 px</td></tr>
+      <tr class="hi"><td>lotado</td><td>netcluster (vivo)</td><td>32.331</td><td>16,4 px</td><td>94,6</td><td class="good">0%</td><td class="good">7,6 px</td></tr>
+      <tr><td>lotado</td><td>netcluster (reconstru&iacute;do)</td><td>32.691</td><td>15,4 px</td><td>64,7</td><td>0%</td><td>21,2 px</td></tr>
+      <tr><td>lotado</td><td>supercluster (reconstru&iacute;do)</td><td>32.684</td><td>15,3 px</td><td>69,7</td><td>0%</td><td>21,5 px</td></tr>
+      <tr><td>lotado</td><td>guloso incremental (vivo)</td><td>38.880</td><td>13,1 px</td><td>55,0</td><td class="bad">8,2%</td><td class="bad">0,0 px</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="cap">Sob converg&ecirc;ncia, o guloso acumula <strong>19% mais marcadores</strong> que um rebuild, com <strong>8,2% deles desenhados por cima de outro</strong> (dist&acirc;ncia zero). O netcluster fica a 1,1% do rebuild em contagem e n&atilde;o produz nenhuma colis&atilde;o, porque a separa&ccedil;&atilde;o &eacute; um invariante, n&atilde;o um efeito colateral do hist&oacute;rico de updates. O pre&ccedil;o aparece no raio m&aacute;ximo: 94,6&nbsp;px contra 64,7&nbsp;px do rebuild &mdash; e o limite te&oacute;rico com a hister&eacute;rese padr&atilde;o &eacute; <code>2(1+h)&#183;r = 100&nbsp;px</code>. A medi&ccedil;&atilde;o encosta no limite provado sem nunca cruz&aacute;-lo.</p>
+</section>
+
+
+<section>
+  <p class="eyebrow">Evid&ecirc;ncia &#183; 5</p>
+  <div class="col">
+    <h2>Densidade local n&atilde;o &eacute; um termo no custo</h2>
+    <p>O crit&eacute;rio de sucesso do brief pede o custo em fun&ccedil;&atilde;o de N <em>e/ou de D</em>, a densidade local &mdash; e com raz&atilde;o: a alternativa mais promissora que o brief tinha identificado, &quot;dirty region&quot; com R-tree din&acirc;mica mais reagrupamento guloso na vizinhan&ccedil;a, custa <code>O(D log N)</code>. Ou seja: degrada exatamente onde o mapa mais precisa dela, no centro da cidade em hora de pico.</p>
+    <p>Uma hierarquia de nets n&atilde;o tem esse termo. A separa&ccedil;&atilde;o limita quantos <em>centros</em> cabem em qualquer bola, independentemente de quantos pontos foram empilhados ali. Abaixo, os mesmos 200.000 dispositivos comprimidos em &aacute;reas cada vez menores &mdash; D varia por um fator de um milh&atilde;o:</p>
+  </div>
+  <div class="tw">
+  <table>
+    <thead><tr><th>lado da &aacute;rea</th><th>D (pontos por bola de 48 m)</th><th>pontos agrupados no zoom m&aacute;x.</th><th>mover 1 ponto</th><th>sondagens de hash</th><th>caminho r&aacute;pido</th></tr></thead>
+    <tbody>
+      <tr><td>888 km</td><td>0,00</td><td>0,1%</td><td>2,14 &micro;s</td><td>22,5</td><td>99,2%</td></tr>
+      <tr><td>222 km</td><td>0,03</td><td>1,6%</td><td>1,42 &micro;s</td><td>15,1</td><td>96,6%</td></tr>
+      <tr><td>56 km</td><td>0,51</td><td>20,5%</td><td>0,97 &micro;s</td><td>9,2</td><td>86,6%</td></tr>
+      <tr><td>14 km</td><td>8,1</td><td>79,3%</td><td>0,72 &micro;s</td><td>6,3</td><td>83,1%</td></tr>
+      <tr><td>3,3 km</td><td>140</td><td>98,1%</td><td>0,62 &micro;s</td><td>7,2</td><td>96,6%</td></tr>
+      <tr class="hi"><td>891 m</td><td>1.975</td><td>99,8%</td><td class="good">0,52 &micro;s</td><td>7,2</td><td>99,5%</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="cap">O custo n&atilde;o &eacute; apenas independente de D &mdash; ele <strong>cai</strong> 4&times; quando a densidade sobe um milh&atilde;o de vezes. O motivo &eacute; estrutural: quanto mais denso, maior a fra&ccedil;&atilde;o de pontos que s&atilde;o <em>folhas</em> (agrupados j&aacute; no zoom m&aacute;ximo), e folha n&atilde;o tem restri&ccedil;&atilde;o de separa&ccedil;&atilde;o para verificar &mdash; move-se com um teste de dist&acirc;ncia e uma soma na cadeia de ancestrais. A regi&atilde;o mais cara de manter &eacute; o campo vazio, n&atilde;o o centro da cidade.</p>
+</section>
+
+<hr class="sep">
+
+<section>
+  <p class="eyebrow">Ao vivo</p>
+  <div class="col">
+    <h2>O &iacute;ndice rodando nesta p&aacute;gina</h2>
+    <p>N&atilde;o &eacute; grava&ccedil;&atilde;o nem simula&ccedil;&atilde;o de resultado: a implementa&ccedil;&atilde;o completa est&aacute; embutida aqui e o &iacute;ndice &eacute; atualizado dispositivo a dispositivo a cada quadro. Arraste para navegar, use a roda ou o controle para mudar o zoom. Troque para <strong>grade fixa</strong> e compare os marcadores nas bordas de c&eacute;lula &mdash; principalmente com zoom alto sobre uma regi&atilde;o densa.</p>
+  </div>
+  <div class="demo">
+    <div class="demo-bar">
+      <button id="nc-play" type="button" aria-pressed="false">Pausar</button>
+      <label>Zoom <input id="nc-zoom" type="range" min="7" max="16" step="0.5" value="11" style="width:120px"><span id="nc-zoomv" class="mono" style="color:var(--fg)">z 11</span></label>
+      <label>Dispositivos
+        <select id="nc-count">
+          <option value="5000">5.000</option>
+          <option value="20000" selected>20.000</option>
+          <option value="60000">60.000</option>
+          <option value="150000">150.000</option>
+        </select>
+      </label>
+      <label>Reports/quadro
+        <select id="nc-rate">
+          <option value="1000">1.000</option>
+          <option value="4000" selected>4.000</option>
+          <option value="12000">12.000</option>
+        </select>
+      </label>
+      <label>Agrupamento
+        <select id="nc-mode">
+          <option value="net" selected>netcluster</option>
+          <option value="grid">grade fixa</option>
+        </select>
+      </label>
+    </div>
+    <canvas id="nc-canvas" aria-label="Mapa animado de dispositivos agrupados em tempo real"></canvas>
+    <div class="readout">
+      <div><div class="v" id="nc-moves">&#8212;</div><div class="k">movimentos/s</div></div>
+      <div><div class="v" id="nc-us">&#8212;</div><div class="k">&micro;s por movimento</div></div>
+      <div><div class="v" id="nc-query">&#8212;</div><div class="k">ms por consulta</div></div>
+      <div><div class="v" id="nc-drawn">&#8212;</div><div class="k">itens no viewport</div></div>
+      <div><div class="v" id="nc-markers">&#8212;</div><div class="k">marcadores de cluster</div></div>
+      <div><div class="v" id="nc-frame">&#8212;</div><div class="k">ms por quadro</div></div>
+      <div><div class="v" id="nc-build">&#8212;</div><div class="k">build inicial</div></div>
+    </div>
+  </div>
+  <p class="cap">A grade fixa &eacute; calculada por for&ccedil;a bruta sobre os dispositivos vis&iacute;veis, apenas para compara&ccedil;&atilde;o visual. O contador de &micro;s por movimento inclui toda a manuten&ccedil;&atilde;o da hierarquia &mdash; os 17 n&iacute;veis, os agregados e a grade.</p>
+</section>
+
+<hr class="sep">
+
+<section>
+  <p class="eyebrow">Limites</p>
+  <div class="col">
+    <h2>O que esta estrutura n&atilde;o resolve</h2>
+    <ul class="tight">
+      <li><strong>O raio m&aacute;ximo &eacute; pior que o de um rebuild.</strong> O limite provado &eacute; <code>2(1+h)&#183;r<sub>z</sub></code>; sob converg&ecirc;ncia forte a medi&ccedil;&atilde;o chegou a 94,6&nbsp;px contra 64,7&nbsp;px de um &iacute;ndice novo. O raio m&eacute;dio fica ~1&nbsp;px pior. Se o requisito for raio m&aacute;ximo apertado, o par&acirc;metro <code>hysteresis</code> troca isso por mais trocas de marcador (com <code>h=0</code>: limite 80&nbsp;px, churn 0,0295 em vez de 0,023).</li>
+      <li><strong>Remo&ccedil;&atilde;o &eacute; 3,8&times; mais cara que inser&ccedil;&atilde;o</strong> (7,8 &micro;s contra 2,1 &micro;s), pela cascata de re-hospedagem. Continua irrelevante perto de um rebuild, mas &eacute; a opera&ccedil;&atilde;o a vigiar em cargas com muita rotatividade de dispositivos.</li>
+      <li><strong>Mem&oacute;ria &eacute; O(N) com constante ~4,2</strong> listagens de grade por ponto (limite duro: maxZoom+1). Em dados uniformes, e n&atilde;o urbanos, essa constante sobe. Ainda assim medimos 119&nbsp;MB contra 289&nbsp;MB do supercluster para 500 mil pontos &mdash; medi&ccedil;&atilde;o em processos separados, e vale a ressalva de que o supercluster ret&eacute;m as fei&ccedil;&otilde;es GeoJSON de entrada (precisa delas para <code>getLeaves</code>) enquanto aqui os pontos entraram sem propriedades.</li>
+      <li><strong>A ordem de inser&ccedil;&atilde;o influencia <em>quais</em> pontos viram centros</strong>, embora nunca as garantias. Dois &iacute;ndices com o mesmo conjunto final podem desenhar marcadores em posi&ccedil;&otilde;es levemente diferentes &mdash; o mesmo j&aacute; vale para o supercluster, cuja sa&iacute;da depende da ordem da KD-tree.</li>
+      <li><strong>Dist&acirc;ncia &eacute; medida no plano de Mercator</strong>, que &eacute; o correto para agrupar o que o usu&aacute;rio v&ecirc; na tela, mas n&atilde;o corresponde a dist&acirc;ncia no solo em latitudes altas. &Eacute; o mesmo comportamento do supercluster.</li>
+      <li><strong>&Eacute; c&oacute;digo novo.</strong> Tem verifica&ccedil;&atilde;o exaustiva de invariantes por for&ccedil;a bruta (separa&ccedil;&atilde;o par a par, cobertura, agregados contra soma expl&iacute;cita de sub&aacute;rvore, consist&ecirc;ncia da grade, parti&ccedil;&atilde;o e limite de raio em todos os n&iacute;veis, sob milhares de opera&ccedil;&otilde;es mistas em seis configura&ccedil;&otilde;es) &mdash; mas n&atilde;o tem anos de produ&ccedil;&atilde;o como o supercluster tem.</li>
+    </ul>
+    <p>Um ponto que <em>n&atilde;o</em> &eacute; limite, e vale registrar: a grade espacial interna n&atilde;o reintroduz o artefato de grade. Ela s&oacute; responde &quot;quais centros est&atilde;o perto deste ponto&quot;; toda decis&atilde;o de pertencimento &eacute; tomada por dist&acirc;ncia euclidiana real. &Eacute; a diferen&ccedil;a entre usar a grade como &iacute;ndice e usar a grade como crit&eacute;rio.</p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Implementa&ccedil;&atilde;o de refer&ecirc;ncia</p>
+  <div class="col">
+    <h2>Como usar</h2>
+    <p>A API de leitura &eacute; compat&iacute;vel com o supercluster, para permitir troca sem mexer no frontend; o que muda &eacute; que o &iacute;ndice aceita escrita.</p>
+  </div>
+<pre><span class="c">// substitui o par load()/getClusters() por um indice que aceita escrita</span>
+import { NetCluster } from './src/index.js';
+
+const index = new NetCluster({ radius: 40, maxZoom: 16, hysteresis: 0.25 });
+
+index.insert(deviceId, lng, lat, props);   <span class="c">// ~2 us</span>
+index.moveTo(deviceId, lng, lat);          <span class="c">// ~2 us   &lt;- a operacao que faltava</span>
+index.remove(deviceId);                    <span class="c">// ~7.6 us</span>
+
+<span class="c">// leitura, identica ao supercluster</span>
+index.getClusters([oeste, sul, leste, norte], zoom);
+index.getTile(z, x, y);
+index.getChildren(clusterId);
+index.getLeaves(clusterId, limite, offset);
+index.getClusterExpansionZoom(clusterId);
+index.representative(deviceId, zoom);      <span class="c">// em qual marcador este device esta</span>
+</pre>
+  <div class="col">
+    <p style="margin-top:1.4em">No reposit&oacute;rio: <code>src/netcluster.js</code> (estrutura), <code>src/cellhash.js</code> (hash de c&eacute;lulas em typed arrays, com remo&ccedil;&atilde;o por <em>backward shift</em> para que um &iacute;ndice de vida longa n&atilde;o acumule l&aacute;pides), <code>test/invariants.js</code> (verificador por for&ccedil;a bruta), <code>bench/</code> (os cinco experimentos deste documento) e <code>demo/</code> (o bundle usado aqui).</p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Fontes</p>
+  <div class="col">
+    <h2>Bibliografia</h2>
+    <ol class="refs">
+      <li>J. Gao, L. Guibas, J. Hershberger, L. Zhang, A. Zhu. <a href="https://link.springer.com/article/10.1007/s00454-003-2925-6">Discrete Mobile Centers</a>. SoCG 2001 / Discrete &amp; Computational Geometry 2003. <em>Manuten&ccedil;&atilde;o cin&eacute;tica de cobertura por raio com n&uacute;mero de centros O(1)-aproximado, sem rearranjo global.</em></li>
+      <li>J. Gao, L. Guibas, A. Nguyen. <a href="http://graphics.stanford.edu/~jgao/spanner_journal.pdf">Deformable Spanners and Applications</a>. SoCG 2004 / CGTA 2006. <em>A</em> discrete center hierarchy <em>e seus invariantes (Lema 3.1); inser&ccedil;&atilde;o, remo&ccedil;&atilde;o e movimento em O(log &alpha;); k-center 8-aproximado para todo k.</em></li>
+      <li>R. Krauthgamer, J. Lee. <a href="https://www.researchgate.net/publication/220779242_Navigating_nets_Simple_algorithms_for_proximity_search">Navigating Nets: Simple Algorithms for Proximity Search</a>. SODA 2004.</li>
+      <li>A. Beygelzimer, S. Kakade, J. Langford. <a href="https://www.cs.princeton.edu/courses/archive/spring05/cos598E/bib/covertree.pdf">Cover Trees for Nearest Neighbor</a>. ICML 2006.</li>
+      <li>R. Cole, L.-A. Gottlieb. <a href="https://dl.acm.org/doi/10.1145/1132516.1132599">Searching Dynamic Point Sets in Spaces with Bounded Doubling Dimension</a>. STOC 2006. <em>Net tree din&acirc;mico com update O(log n) independente do aspect ratio.</em></li>
+      <li>M. Schmidt, C. Sohler. <a href="https://arxiv.org/abs/1908.02645">Fully Dynamic Hierarchical Diameter k-Clustering and k-Center</a>. arXiv:1908.02645, 2019. <em>Mant&eacute;m a hierarquia inteira; a&nbsp;fam&iacute;lia &quot;&alpha;-good&quot; da Se&ccedil;&atilde;o 2 &eacute; a estrutura implementada aqui.</em></li>
+      <li>G. Goranci, M. Henzinger, D. Leniowski, C. Schulz, A. Svozil. <a href="https://arxiv.org/abs/1908.03948">Fully Dynamic k-Center Clustering in Doubling Metrics</a>. 2020. <em>(2+&epsilon;) determin&iacute;stico, polylog, independente de k, com estudo experimental.</em></li>
+      <li>M. Bateni et al. <a href="https://epubs.siam.org/doi/10.1137/1.9781611977554.ch101">Optimal Fully Dynamic k-Center Clustering for Adaptive and Oblivious Adversaries</a>. SODA 2023.</li>
+      <li><a href="https://epubs.siam.org/doi/10.1137/1.9781611977912.124">Fully Dynamic Consistent k-Center Clustering</a>, SODA 2024, e <a href="https://arxiv.org/abs/2412.03238">Dynamic Consistent k-Center Clustering with Optimal Recourse</a>, SODA 2025. <em>O eixo do</em> recourse<em>: quantos centros mudam por update &mdash; o an&aacute;logo formal do &quot;n&atilde;o pode piscar na tela&quot;.</em></li>
+      <li><a href="https://arxiv.org/pdf/2501.07745">DynHAC: Fully Dynamic Approximate Hierarchical Agglomerative Clustering</a>, 2025, e <a href="https://arxiv.org/abs/2506.18384">Fully-Dynamic Parallel Algorithms for Single-Linkage Clustering</a>, 2025. <em>A linha de HAC din&acirc;mico pedida na pergunta 1; resolve outro problema (dendrograma em m&eacute;trica arbitr&aacute;ria), mais caro que o necess&aacute;rio aqui.</em></li>
+      <li>Mapbox. <a href="https://github.com/mapbox/supercluster">supercluster</a> e <a href="https://github.com/mapbox/kdbush">kdbush</a>; issues <a href="https://github.com/mapbox/supercluster/issues/19">#19</a>, <a href="https://github.com/mapbox/supercluster/issues/126">#126</a>, <a href="https://github.com/mapbox/supercluster/issues/237">#237</a> sobre atualiza&ccedil;&atilde;o incremental.</li>
+      <li>Uber. <a href="https://www.uber.com/us/en/blog/h3/">H3: Hexagonal Hierarchical Spatial Index</a>. &middot; <a href="https://github.com/tidwall/tile38">Tile38</a>. &middot; Elastic, <a href="https://www.elastic.co/docs/explore-analyze/visualize/maps/maps-grid-aggregation">Clusters / grid aggregation</a>.</li>
+    </ol>
+  </div>
+</section>
+
+</div>
+<script>/*LIB*/</script>
+<script>/*DEMO*/</script>
