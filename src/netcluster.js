@@ -694,9 +694,34 @@ export class NetCluster {
       geometry: { type: 'Point', coordinates: [lng, lat] } };
   }
 
+  /**
+   * Decode a cluster id into (slot, level), rejecting anything that is not one.
+   * Without this a stray value indexes the typed arrays out of range, yielding
+   * `undefined`, which never equals the NONE sentinel -- so the sibling walk
+   * spins forever instead of failing.
+   */
+  _decodeClusterId(clusterId) {
+    // Coerce only from number or numeric string. Plain Number() would turn
+    // null, false, '' and [] into 0, which looks like a perfectly good cluster id.
+    let n = NaN;
+    if (typeof clusterId === 'number') n = clusterId;
+    else if (typeof clusterId === 'string' && clusterId.trim() !== '') n = Number(clusterId);
+    if (!Number.isFinite(n) || n < 0) {
+      throw new TypeError(
+        `netcluster: ${JSON.stringify(clusterId)} is not a cluster id. Cluster ids are numbers, ` +
+        `read from feature.properties.cluster_id on a cluster returned by getClusters(). ` +
+        `A device id is not a cluster id -- use representative(deviceId, zoom) to find the cluster a device is in.`);
+    }
+    const slot = Math.floor(n / 32), z = n % 32;
+    if (!Number.isInteger(slot) || slot >= this._n || z > this.maxZoom + 1 || this.tz[slot] === -2) {
+      throw new RangeError(`netcluster: cluster id ${clusterId} does not refer to a live cluster`);
+    }
+    return [slot, z];
+  }
+
   /** The sub-clusters one expansion step below cluster (`s`, `z`). */
   getChildren(clusterId) {
-    const s = Math.floor(clusterId / 32), z = clusterId % 32;
+    const [s, z] = this._decodeClusterId(clusterId);
     const nz = this.getClusterExpansionZoom(clusterId);
     const agg = [0, 0, 0];
     if (nz > this.maxZoom) return [this._leafFeature(s)];
@@ -714,7 +739,7 @@ export class NetCluster {
 
   /** Zoom at which cluster (`s`, `z`) first splits. */
   getClusterExpansionZoom(clusterId) {
-    const s = Math.floor(clusterId / 32), z = clusterId % 32;
+    const [s, z] = this._decodeClusterId(clusterId);
     for (let b = this.kid[s]; b !== NONE; b = this.sib[b]) {
       if (this.tz[b] > z) return this.tz[b];
     }
@@ -722,7 +747,7 @@ export class NetCluster {
   }
 
   getLeaves(clusterId, limit = 10, offset = 0) {
-    const s = Math.floor(clusterId / 32), z = clusterId % 32;
+    const [s, z] = this._decodeClusterId(clusterId);
     const out = [];
     let skipped = 0;
     const walk = (n, lvl) => {

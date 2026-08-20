@@ -66,6 +66,26 @@ function project2(lng, lat) {
   if (y < 0) y = 0; else if (y >= 1) y = 0.9999999;
   return [Math.round(x * PREC), Math.round(y * PREC)];
 }
+// A bad cluster id must fail loudly. It used to index the typed arrays out of
+// range, and `undefined !== NONE` kept the sibling walk spinning forever.
+let leaked = 0;
+for (const v of ['vehicle-1', undefined, null, {}, [], false, '', '   ', -5, 1e9, NaN, Infinity, [11]]) {
+  for (const fn of ['getChildren', 'getLeaves', 'getClusterExpansionZoom']) {
+    try { idx[fn](v); leaked++; console.error(`  ${fn} accepted ${JSON.stringify(v)}`); } catch (e) { /* expected */ }
+  }
+}
+if (leaked) fail(`${leaked} invalid cluster ids were accepted instead of throwing`);
+// valid ids keep working, as numbers and as strings (JSON round-trips)
+{
+  const c = idx.getClusters([-180, -85, 180, 85], 8).find(f => f.properties.cluster);
+  const cid = c.properties.cluster_id;
+  if (idx.getClusterExpansionZoom(cid) !== idx.getClusterExpansionZoom(String(cid))) {
+    fail('numeric and string cluster ids disagree');
+  }
+  if (idx.getLeaves(cid, 1e9).length !== c.properties.point_count) fail('getLeaves count mismatch');
+}
+console.log('  ok cluster-id validation: 13 invalid inputs rejected, valid ids unaffected');
+
 const t = idx.getTile(10, 366, 594);
 console.log('  ok api: partitions, expansion zoom, children, leaves, viewport agreement' +
             (t ? `, tile(10/366/594)=${t.features.length} features` : ''));

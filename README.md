@@ -41,9 +41,13 @@ index.remove('vehicle-1');
 // read API matches supercluster
 const clusters = index.getClusters([-47, -24, -46, -23], 11);
 const tile     = index.getTile(11, 758, 1161);
-const children = index.getChildren(clusterId);
-const leaves   = index.getLeaves(clusterId, 10);
-const zoom     = index.getClusterExpansionZoom(clusterId);
+
+// cluster ids come from the features getClusters() returns -- a device id is not
+// a cluster id, and passing one throws
+const clusterId = clusters.find(f => f.properties.cluster)?.properties.cluster_id;
+const children  = index.getChildren(clusterId);
+const leaves    = index.getLeaves(clusterId, 10);
+const zoom      = index.getClusterExpansionZoom(clusterId);
 
 // plus one supercluster doesn't have:
 const marker   = index.representative('vehicle-1', 11);  // which cluster is it drawn in
