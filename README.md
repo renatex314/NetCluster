@@ -181,10 +181,47 @@ Costs 20 bytes per point per category. Counts and centroids are exact; you get 0
 | option | default | |
 |---|---|---|
 | `radius` | `40` | cluster radius in screen pixels |
-| `maxZoom` | `16` | finest level maintained |
-| `extent` | `512` | tile extent |
-| `hysteresis` | `0.25` | how far an assignment stretches before a point is re-homed; higher = fewer visible marker changes, larger worst-case radius |
+| `extent` | `512` | tile extent those pixels are measured against |
+| `maxZoom` | `16` | finest level maintained; beyond it every point stands alone |
+| `minZoom` | `0` | coarsest zoom a query may ask for |
+| `hysteresis` | `0.25` | how far an assignment stretches before a point is re-homed |
 | `categories` | `0` | number of filter categories (0 = off) |
+| `categoryField` | `'category'` | which property holds the category index |
+
+The same options configure the Redis backend, which additionally takes `prefix`
+and `maxPipeline`.
+
+### Tuning
+
+`radius` and `extent` are one knob in two parts: what matters is the ratio. At the
+defaults a cluster is 40px across on a 512px tile, so `radius: 80, extent: 1024`
+clusters identically.
+
+**Too many markers, too cluttered** — raise `radius`. 60–80 gives noticeably
+fewer, larger clusters. This is almost always the right dial, and the only one most
+people need.
+
+**Clusters break apart too early as you zoom in** — raise `maxZoom`. It is the
+zoom at which clustering stops entirely. Hard-capped at 20: beyond that the
+fixed-point cell resolution runs out and the constructor throws.
+
+**Markers reshuffle distractingly while points move** — raise `hysteresis`. This is
+the one people do not know they want. At 0 a point is re-homed the instant it
+strictly violates its covering constraint, so a vehicle idling on a boundary
+flickers between two clusters. At 0.25 the existing assignment survives 25% past
+that, trading a slightly looser worst-case radius — `2(1+h)·r_z` instead of
+`2·r_z` — for far fewer visible changes. Try 0.5 if churn is still visible; it also
+costs less CPU, because fewer moves take the repair path.
+
+**Filtering** — set `categories` to how many you have and `categoryField` to the
+property holding the index. Update cost does not grow with the number of
+categories: a point belongs to exactly one, so it touches exactly one slice per
+level.
+
+Geometry cannot change on a live index. On the Redis backend `init()` verifies that
+every pod agrees and fails loudly if not — two processes disagreeing about what a
+cluster means, while both believe they configured it, is the failure worth being
+noisy about.
 
 ## Layout
 
