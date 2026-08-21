@@ -93,6 +93,20 @@ REDIS_URL=redis://localhost:6379 node server/server.js
 curl 'localhost:3000/tile/11/758/1161'
 ```
 
+## Demo
+
+A live Leaflet map with a moving fleet, clustered incrementally — click a cluster
+to expand it, and watch the µs-per-report counter while every vehicle moves:
+
+```bash
+git clone https://github.com/renatex314/NetCluster && cd NetCluster
+npm run demo          # then open http://localhost:8944/demo/index.html
+```
+
+[`demo/index.html`](demo/index.html) is a single file with no build step. It imports
+the library as an ES module, so it needs to be served rather than opened from
+`file://`.
+
 ## Which one should you use
 
 | | in-process | Redis |

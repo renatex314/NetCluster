@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>netcluster-js — live fleet on Leaflet</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+  :root {
+    --bg: #10161a; --panel: #182026; --line: #2a3641;
+    --fg: #e8edf1; --muted: #93a3b1; --accent: #ff8f3f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font: 14px/1.5 system-ui, -apple-system, sans-serif;
+               background: var(--bg); color: var(--fg); }
+  #map { position: absolute; inset: 0; background: var(--bg); }
+  .panel {
+    position: absolute; z-index: 1000; top: 12px; left: 12px; width: 268px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.45); overflow: hidden;
+  }
+  .panel h1 { margin: 0; padding: 12px 14px 10px; font-size: 15px; font-weight: 650;
+              border-bottom: 1px solid var(--line); }
+  .panel h1 small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .ctl { padding: 10px 14px; border-bottom: 1px solid var(--line); display: grid; gap: 9px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .row label { color: var(--muted); font-size: 12px; }
+  select, button {
+    background: #0e1418; color: var(--fg); border: 1px solid var(--line);
+    border-radius: 5px; padding: 4px 9px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: #17110a; border-color: var(--accent); font-weight: 600; }
+  button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .stats { padding: 10px 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+  .stat b { display: block; font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 600; }
+  .stat span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  .note { padding: 10px 14px; color: var(--muted); font-size: 11.5px; border-top: 1px solid var(--line); }
+  .note a { color: var(--accent); }
+
+  .nc-cluster { display: flex; align-items: center; justify-content: center;
+                border-radius: 50%; color: #17110a; font-weight: 700;
+                font-variant-numeric: tabular-nums; box-shadow: 0 0 0 4px rgba(255,143,63,.18);
+                background: var(--accent); cursor: pointer; }
+  .nc-dot { border-radius: 50%; background: #6fd3ff; box-shadow: 0 0 0 3px rgba(111,211,255,.2); }
+  .leaflet-container { background: #0d1216; }
+  /* the OSM tiles are bright; tone them down so the markers read */
+  .leaflet-tile-pane { filter: grayscale(.85) brightness(.55) contrast(1.1); }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="panel">
+  <h1>netcluster-js
+    <small>a moving fleet, clustered incrementally</small>
+  </h1>
+  <div class="ctl">
+    <div class="row">
+      <button id="play" class="primary" type="button">Pause</button>
+      <select id="fleet">
+        <option value="2000">2,000 vehicles</option>
+        <option value="10000" selected>10,000 vehicles</option>
+        <option value="50000">50,000 vehicles</option>
+        <option value="200000">200,000 vehicles</option>
+      </select>
+    </div>
+    <div class="row">
+      <label for="rate">Reports / frame</label>
+      <select id="rate">
+        <option value="500">500</option>
+        <option value="2000" selected>2,000</option>
+        <option value="10000">10,000</option>
+      </select>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="stat"><b id="s-moves">—</b><span>reports / s</span></div>
+    <div class="stat"><b id="s-us">—</b><span>µs per report</span></div>
+    <div class="stat"><b id="s-query">—</b><span>ms per query</span></div>
+    <div class="stat"><b id="s-markers">—</b><span>markers drawn</span></div>
+    <div class="stat"><b id="s-total">—</b><span>vehicles indexed</span></div>
+    <div class="stat"><b id="s-build">—</b><span>initial build</span></div>
+  </div>
+  <div class="note">
+    Every vehicle is moving and the index is updated one report at a time — nothing is
+    ever rebuilt. Click a cluster to expand it.
+    <a href="https://github.com/renatex314/NetCluster">source</a>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script type="module">
+// Local checkout. From npm instead:  import { NetCluster } from 'https://esm.sh/netcluster-js';
+import { NetCluster, isCluster } from '../src/index.js';
+
+const $ = (id) => document.getElementById(id);
+
+const map = L.map('map', { preferCanvas: true }).setView([-23.55, -46.63], 11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, attribution: '&copy; OpenStreetMap'
+}).addTo(map);
+
+// ---- the fleet -------------------------------------------------------------
+// A few dense districts plus a spread-out tail, so clustering has something to do.
+const HUBS = [[-46.633,-23.550,1],[-46.83,-23.68,.34],[-46.47,-23.47,.30],
+              [-46.55,-23.72,.26],[-46.73,-23.43,.22],[-46.39,-23.66,.18],[-46.25,-23.55,.12]];
+let seed = 12345;
+const rnd = () => { seed ^= seed<<13; seed>>>=0; seed ^= seed>>17; seed ^= seed<<5; seed>>>=0; return seed/4294967296; };
+const gauss = () => Math.sqrt(-2*Math.log(rnd()||1e-9))*Math.cos(2*Math.PI*rnd());
+
+let index, lng, lat, head, speed, N = 0, cursor = 0;
+
+function build(n) {
+  N = n;
+  lng = new Float64Array(N); lat = new Float64Array(N);
+  head = new Float64Array(N); speed = new Float64Array(N);
+  index = new NetCluster({ radius: 60, maxZoom: 17 });
+  const total = HUBS.reduce((a, h) => a + h[2], 0);
+  const t0 = performance.now();
+  for (let i = 0; i < N; i++) {
+    let r = rnd() * total, k = 0;
+    while (k < HUBS.length - 1 && (r -= HUBS[k][2]) > 0) k++;
+    const spread = 0.012 + 0.05 * Math.sqrt(HUBS[k][2]);
+    lng[i] = HUBS[k][0] + gauss() * spread;
+    lat[i] = HUBS[k][1] + gauss() * spread * .8;
+    head[i] = rnd() * 6.283;
+    speed[i] = 6 + rnd() * 24;                       // metres per report
+    index.insert(i, lng[i], lat[i]);
+  }
+  $('s-build').textContent = Math.round(performance.now() - t0) + ' ms';
+  $('s-total').textContent = N.toLocaleString();
+  cursor = 0;
+}
+
+const M_PER_DEG = 111320;
+function report(i) {
+  head[i] += (rnd() - .5) * .5;
+  if (rnd() < .01) head[i] = rnd() * 6.283;          // turn a corner
+  const cos = Math.max(.2, Math.cos(lat[i] * Math.PI / 180));
+  lng[i] += Math.cos(head[i]) * speed[i] / (M_PER_DEG * cos);
+  lat[i] += Math.sin(head[i]) * speed[i] / M_PER_DEG;
+  if (Math.abs(lng[i] + 46.6) > 1 || Math.abs(lat[i] + 23.55) > .8) head[i] += Math.PI;
+  index.moveTo(i, lng[i], lat[i]);                   // the whole update path
+}
+
+// ---- rendering --------------------------------------------------------------
+const layer = L.layerGroup().addTo(map);
+const size = (c) => c < 10 ? 30 : c < 100 ? 38 : c < 1000 ? 46 : 56;
+const label = (c) => c < 1000 ? String(c) : c < 10000 ? (c/1000).toFixed(1) + 'k' : Math.round(c/1000) + 'k';
+
+function draw() {
+  const b = map.getBounds();
+  const t0 = performance.now();
+  const features = index.getClusters(
+    [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], Math.round(map.getZoom()));
+  const queryMs = performance.now() - t0;
+
+  layer.clearLayers();
+  for (const f of features) {
+    const [flng, flat] = f.geometry.coordinates;
+    if (isCluster(f)) {
+      const n = f.properties.point_count, s = size(n);
+      const m = L.marker([flat, flng], {
+        icon: L.divIcon({
+          className: '', iconSize: [s, s], iconAnchor: [s/2, s/2],
+          html: `<div class="nc-cluster" style="width:${s}px;height:${s}px;font-size:${n<1000?13:12}px">${label(n)}</div>`
+        })
+      });
+      m.on('click', () => {
+        const z = index.getClusterExpansionZoom(f.properties.cluster_id);
+        map.setView([flat, flng], Math.min(z, 18));
+      });
+      layer.addLayer(m);
+    } else {
+      layer.addLayer(L.marker([flat, flng], {
+        icon: L.divIcon({ className: '', iconSize: [9, 9], iconAnchor: [4.5, 4.5],
+                          html: '<div class="nc-dot" style="width:9px;height:9px"></div>' })
+      }));
+    }
+  }
+  return { queryMs, markers: features.length };
+}
+
+// ---- loop --------------------------------------------------------------------
+let running = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let accUs = 0, accMoves = 0, lastReport = performance.now();
+
+function frame() {
+  if (running) {
+    const budget = Math.min(N, +$('rate').value);
+    const t0 = performance.now();
+    for (let k = 0; k < budget; k++) { report(cursor); cursor = (cursor + 1) % N; }
+    accUs += (performance.now() - t0) * 1000;
+    accMoves += budget;
+  }
+  const { queryMs, markers } = draw();
+  $('s-markers').textContent = markers.toLocaleString();
+  $('s-query').textContent = queryMs.toFixed(2);
+
+  const now = performance.now();
+  if (now - lastReport > 500) {
+    $('s-moves').textContent = accMoves ? Math.round(accMoves / ((now - lastReport) / 1000)).toLocaleString() : '0';
+    $('s-us').textContent = accMoves ? (accUs / accMoves).toFixed(2) : '—';
+    accUs = 0; accMoves = 0; lastReport = now;
+  }
+  requestAnimationFrame(frame);
+}
+
+$('play').addEventListener('click', (e) => {
+  running = !running;
+  e.target.textContent = running ? 'Pause' : 'Resume';
+});
+$('fleet').addEventListener('change', (e) => build(+e.target.value));
+map.on('moveend zoomend', draw);
+
+build(+$('fleet').value);
+$('play').textContent = running ? 'Pause' : 'Resume';
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
