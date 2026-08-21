@@ -95,8 +95,11 @@ curl 'localhost:3000/tile/11/758/1161'
 
 ## Demo
 
-A live Leaflet map with a moving fleet, clustered incrementally — click a cluster
-to expand it, and watch the µs-per-report counter while every vehicle moves:
+**▶ [Live demo](https://renatex314.github.io/NetCluster/demo/index.html)** — a Leaflet
+map with a moving fleet, clustered incrementally. Click a cluster to expand it, and
+watch the µs-per-report counter while every vehicle moves.
+
+To run it locally:
 
 ```bash
 git clone https://github.com/renatex314/NetCluster && cd NetCluster
