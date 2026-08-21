@@ -144,6 +144,16 @@ export class RedisNetCluster {
     return out;
   }
 
+  /**
+   * Is a device with this id currently in the index?
+   *
+   * One EXISTS against the point hash. No script, so it needs no EVALSHA round
+   * trip, runs happily on a read replica, and costs the write primary nothing.
+   */
+  async has(id) {
+    return (await this.reader.exists(`${this.prefix}:p:${String(id)}`)) === 1;
+  }
+
   async size() { return Number(await this.redis.get(`${this.prefix}:n`) || 0); }
 
   /** Which cluster is this device drawn as at `zoom`? */

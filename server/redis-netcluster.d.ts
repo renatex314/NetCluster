@@ -73,6 +73,9 @@ export declare class RedisNetCluster<P = Record<string, unknown>> {
   /** Which cluster a device is drawn inside; null if unknown. */
   representative(id: DeviceId, zoom: number): Promise<string | null>;
 
+  /** Is a device with this id currently in the index? */
+  has(id: DeviceId): Promise<boolean>;
+
   size(): Promise<number>;
 
   /** Debug only: SCANs the keyspace, cost is O(keys). */

@@ -61,3 +61,13 @@ async function useRemote(): Promise<void> {
   void r; void clusters; void rep; void n;
 }
 void useRemote;
+
+// has(): the existence check, on both backends
+{
+  const idx = new NetCluster<{ status: number }>({ maxZoom: 16 });
+  const present: boolean = idx.has('truck-1');
+  const numeric: boolean = idx.has(42);
+  void present; void numeric;
+  // @ts-expect-error -- has() takes an id, not a cluster id object
+  idx.has({ id: 1 });
+}

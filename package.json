@@ -1,6 +1,6 @@
 {
   "name": "netcluster-js",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Fully dynamic hierarchical geospatial clustering. Move a point in ~2us instead of rebuilding the index.",
   "type": "module",
   "main": "./src/index.js",

@@ -64,8 +64,12 @@ index.getLeaves(clusterId, 10);             // the vehicles inside it
 // which marker is this device drawn in? (supercluster has no equivalent)
 index.representative('vehicle-0', 11);
 
+// is this device registered?
+index.has('vehicle-0');                     // true
+
 // device goes offline
 index.remove('vehicle-0');
+index.has('vehicle-0');                     // false
 ```
 
 Runnable version: [`examples/basic.js`](examples/basic.js).

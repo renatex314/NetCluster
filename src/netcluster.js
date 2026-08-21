@@ -546,6 +546,14 @@ export class NetCluster {
     return s;
   }
 
+  /**
+   * Is a point with this id currently in the index?
+   *
+   * Cheaper and clearer than `representative(id, z) !== -1`, which was the only
+   * way to ask before and conflates "absent" with "at level z".
+   */
+  has(id) { return this.ids.has(id); }
+
   get size() { return this.ids.size; }
 
   // ----------------------------------------------------------------- query --

@@ -90,3 +90,39 @@ const t = idx.getTile(10, 366, 594);
 console.log('  ok api: partitions, expansion zoom, children, leaves, viewport agreement' +
             (t ? `, tile(10/366/594)=${t.features.length} features` : ''));
 console.log('API TESTS PASSED');
+
+// --- has() -----------------------------------------------------------------
+{
+  const ok = (c, m) => { if (!c) fail(m); };
+  const h = new NetCluster({ maxZoom: 16 });
+  ok(h.has('truck-1') === false, 'has() on an empty index');
+  h.insert('truck-1', -46.6333, -23.5505);
+  h.insert(42, 2.35, 48.85);                          // numeric ids too
+  ok(h.has('truck-1') === true, 'has() after insert');
+  ok(h.has(42) === true, 'has() with a numeric id');
+  ok(h.has('42') === false, 'has() must not coerce "42" to the number 42');
+  ok(h.has('nope') === false, 'has() for an unknown id');
+
+  // moving must not change registration
+  h.moveTo('truck-1', -46.70, -23.60);
+  ok(h.has('truck-1') === true, 'has() after a move');
+
+  // removing must, and re-inserting brings it back through a recycled slot
+  h.remove('truck-1');
+  ok(h.has('truck-1') === false, 'has() after remove');
+  ok(h.size === 1, 'size after remove');
+  h.insert('truck-1', 0, 0);
+  ok(h.has('truck-1') === true, 'has() after re-insert');
+
+  // agrees with size across churn
+  for (let i = 0; i < 200; i++) h.insert(`v${i}`, (i % 90) - 45, (i % 70) - 35);
+  let live = 0;
+  for (let i = 0; i < 200; i++) if (h.has(`v${i}`)) live++;
+  ok(live === 200, `has() found ${live} of 200`);
+  for (let i = 0; i < 100; i++) h.remove(`v${i}`);
+  live = 0;
+  for (let i = 0; i < 200; i++) if (h.has(`v${i}`)) live++;
+  ok(live === 100, `has() found ${live} of 100 survivors`);
+  ok(h.size === live + 2, 'has() disagrees with size');
+  console.log('  ok has(): registration tracks insert / move / remove / re-insert');
+}

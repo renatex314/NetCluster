@@ -101,6 +101,9 @@ export declare class NetCluster<P = Record<string, unknown>> {
   readonly size: number;
   readonly stats: NetClusterStats;
 
+  /** Is a point with this id currently in the index? */
+  has(id: DeviceId): boolean;
+
   /** Add a point. If the id already exists this moves it instead. */
   insert(id: DeviceId, lng: number, lat: number, props?: P): number;
 

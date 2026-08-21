@@ -238,6 +238,48 @@ await Promise.allSettled(inflight);
 const st3 = checkInvariants(await readState(redis, 'itest', OPTS.maxZoom), OPTS, 'after-kill');
 console.log(`  ok pod killed mid-write: index still consistent (${st3.points} points)`);
 
+// --- 4. has(): the Redis answer must match the in-process one for every id
+{
+  const hidx = new RedisNetCluster(redis, { ...OPTS, prefix: 'hastest' });
+  await hidx.drop();
+  await hidx.init();
+  const mem = new NetCluster(OPTS);
+
+  if (await hidx.has('truck-1')) fail('has() true on an empty index');
+  await hidx.upsert('truck-1', -46.6333, -23.5505);
+  if (!(await hidx.has('truck-1'))) fail('has() false after upsert');
+  await hidx.upsert('truck-1', -46.70, -23.60);
+  if (!(await hidx.has('truck-1'))) fail('has() false after a move');
+  await hidx.remove('truck-1');
+  if (await hidx.has('truck-1')) fail('has() true after remove');
+  await hidx.upsert('truck-1', 0, 0);
+  if (!(await hidx.has('truck-1'))) fail('has() false after re-insert');
+  await hidx.drop();
+  await hidx.init();
+
+  // Same operation stream against both backends, then compare every id.
+  const live = new Set();
+  for (let i = 0; i < 400; i++) {
+    const id = 'v' + Math.floor(rnd() * 150);
+    if (rnd() < 0.25 && live.size) {
+      const victim = [...live][Math.floor(rnd() * live.size)];
+      await hidx.remove(victim); mem.remove(victim); live.delete(victim);
+    } else {
+      const [lng, lat] = pick();
+      await hidx.upsert(id, lng, lat); mem.insert(id, lng, lat); live.add(id);
+    }
+  }
+  let mismatch = 0;
+  for (let i = 0; i < 150; i++) {
+    const id = 'v' + i;
+    if ((await hidx.has(id)) !== mem.has(id)) mismatch++;
+  }
+  if (mismatch) fail(`has() disagrees with the in-process index on ${mismatch} ids`);
+  if ((await hidx.size()) !== mem.size) fail('size disagrees after the same operations');
+  console.log(`  ok has(): Redis and in-process agree on all 150 ids (${live.size} live)`);
+  await hidx.drop();
+}
+
 await idx.drop();
 for (const c of clients) c.disconnect();
 killed.disconnect();
