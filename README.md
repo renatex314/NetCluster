@@ -1,5 +1,12 @@
 # NetCluster
 
+[![npm](https://img.shields.io/npm/v/netcluster-js.svg)](https://www.npmjs.com/package/netcluster-js)
+[![npm downloads](https://img.shields.io/npm/dm/netcluster-js.svg)](https://www.npmjs.com/package/netcluster-js)
+[![zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](package.json)
+[![types included](https://img.shields.io/badge/types-included-blue.svg)](src/index.d.ts)
+[![license](https://img.shields.io/npm/l/netcluster-js.svg)](LICENSE)
+[![live demo](https://img.shields.io/badge/demo-live-orange.svg)](https://renatex314.github.io/NetCluster/demo/index.html)
+
 Geospatial point clustering for maps, like [supercluster](https://github.com/mapbox/supercluster) — except you can **move a point without rebuilding the index**.
 
 ```
