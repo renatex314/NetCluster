@@ -13,6 +13,7 @@ import { createHash } from 'crypto';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { project, PREC } from '../src/netcluster.js';
+import { readFeature, featuresOf } from '../src/geojson.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const lua = (f) => readFileSync(join(HERE, 'lua', f), 'utf8');
@@ -45,6 +46,7 @@ export class RedisNetCluster {
     this.maxZoom = opts.maxZoom ?? 16;
     this.hysteresis = opts.hysteresis ?? 0.25;
     this.maxPipeline = opts.maxPipeline ?? 25;
+    this.idField = opts.idField ?? 'id';
     for (const [name, file] of [['ncUpsert', 'upsert.lua'], ['ncRemove', 'remove.lua'],
                                 ['ncQuery', 'query.lua'], ['ncStats', 'stats.lua'],
                                 ['ncRep', 'rep.lua']]) {
@@ -101,6 +103,35 @@ export class RedisNetCluster {
       for (const [, v] of res) out.push(v);
     }
     return out;
+  }
+
+  /**
+   * Ingest a GeoJSON FeatureCollection, an array of Features, or one Feature,
+   * through `upsertMany`. Upserts rather than replaces, as everywhere here.
+   *
+   * @returns how many features were ingested.
+   *
+   * Reading rules are the in-process ones -- id from `feature.id` then
+   * `properties[idField]`, Point geometry only, altitude ignored. The one
+   * difference is that **`properties` are dropped**: this backend stores position
+   * and structure in Redis and nothing else, so there is nowhere to put them and
+   * the queries never return them. Keep them in your own store, keyed by id.
+   */
+  async load(data, options) {
+    const [fs, label] = featuresOf(data);
+    const skip = options !== undefined && options.onError === 'skip';
+    const scratch = [0, 0, 0, undefined];
+    const points = [];
+    for (let i = 0; i < fs.length; i++) {
+      if (skip) {
+        try { readFeature(fs[i], this.idField, scratch, `${label}[${i}]`); } catch { continue; }
+      } else {
+        readFeature(fs[i], this.idField, scratch, `${label}[${i}]`);
+      }
+      points.push({ id: scratch[0], lng: scratch[1], lat: scratch[2] });
+    }
+    await this.upsertMany(points);
+    return points.length;
   }
 
   remove(id) { return this.redis.ncRemove(this.prefix, String(id)); }

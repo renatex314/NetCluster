@@ -64,3 +64,26 @@ console.log(`tile 11/758/1161: ${tile ? tile.features.length + ' features' : 'em
 index.remove('vehicle-0');
 console.log(`\nafter removing vehicle-0: ${index.size} vehicles`);
 console.log(`representative() now returns ${index.representative('vehicle-0', 11)} (gone)`);
+
+// --- GeoJSON in, GeoJSON out ---------------------------------------------------
+// Whatever is producing your points -- a .geojson file, a PostGIS query, a
+// Mapbox source -- is probably already emitting this shape. load() reads it and
+// drops the wrappers, so the index costs what it would have cost had you called
+// insert() directly.
+index.load({
+  type: 'FeatureCollection',
+  features: [
+    { type: 'Feature', id: 'van-1', properties: { plate: 'GEO-001' },
+      geometry: { type: 'Point', coordinates: [-46.6400, -23.5600] } },
+    // properties may be null, and a third coordinate is altitude: allowed by the
+    // spec, ignored by clustering
+    { type: 'Feature', id: 'van-2', properties: null,
+      geometry: { type: 'Point', coordinates: [-46.6410, -23.5610, 720] } },
+  ],
+});
+console.log(`\nafter load(): ${index.size} vehicles, van-1 registered = ${index.has('van-1')}`);
+
+// getClusters returns bare features; getFeatureCollection wraps them, which is
+// what map.getSource(id).setData() and L.geoJSON() want.
+const fc = index.getFeatureCollection(bbox, 11);
+console.log(`getFeatureCollection: ${fc.type} of ${fc.features.length} features`);

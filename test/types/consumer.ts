@@ -71,3 +71,43 @@ void useRemote;
   // @ts-expect-error -- has() takes an id, not a cluster id object
   idx.has({ id: 1 });
 }
+
+// --- GeoJSON ingest ---------------------------------------------------------
+import type {
+  InputPointFeature, InputFeatureCollection, NetClusterFeatureCollection,
+} from '../../src/index.js';
+
+const gjIndex = new NetCluster<Vehicle>({ idField: 'plate', categories: 4 });
+
+const one: InputPointFeature<Vehicle> = {
+  type: 'Feature',
+  id: 'v9',
+  properties: { plate: 'ABC-1234', status: 1 },
+  geometry: { type: 'Point', coordinates: [-46.63, -23.55] },
+};
+const slot: number = gjIndex.insertFeature(one);
+gjIndex.moveToFeature(one);
+
+const fc: InputFeatureCollection<Vehicle> = { type: 'FeatureCollection', features: [one] };
+const loaded: number = gjIndex.load(fc);
+gjIndex.load([one]);
+gjIndex.load(one);
+gjIndex.load(fc, { onError: 'skip' });
+
+// properties may be null, and a third coordinate is allowed
+gjIndex.load([{ type: 'Feature', id: 1, properties: null,
+                geometry: { type: 'Point', coordinates: [0, 0, 120] } }]);
+
+const collection: NetClusterFeatureCollection<Vehicle> = gjIndex.getFeatureCollection(bbox, 11, 2);
+const dump: NetClusterFeatureCollection<Vehicle> = gjIndex.toGeoJSON();
+for (const f of collection.features) {
+  if (isCluster(f)) { const c: number = f.properties.point_count; void c; }
+  else { const plate: string = f.properties.plate; void plate; }
+}
+void slot; void loaded; void dump;
+
+// --- GeoJSON through the Redis backend --------------------------------------
+declare const redisLike: RedisLike;
+const rIndex = new RedisNetCluster(redisLike, { idField: 'plate' });
+const rLoaded: Promise<number> = rIndex.load(fc);
+void rLoaded;

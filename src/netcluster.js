@@ -1,4 +1,5 @@
 import { CellHash } from './cellhash.js';
+import { readFeature, featuresOf } from './geojson.js';
 
 /**
  * NetCluster -- fully dynamic hierarchical geospatial clustering.
@@ -61,6 +62,10 @@ export class NetCluster {
     // exactly one slice per level and the update cost does NOT grow with K.
     this.categories = options.categories ?? 0;
     this.categoryField = options.categoryField ?? 'category';
+    // Where insertFeature/load look for the id when the Feature has no `id`
+    // of its own. GeoJSON puts it on the feature; plenty of real files put it
+    // in properties instead.
+    this.idField = options.idField ?? 'id';
 
     if (this.maxZoom > 20) throw new Error('maxZoom > 20 exceeds fixed-point cell resolution');
 
@@ -90,6 +95,14 @@ export class NetCluster {
 
     this.grid = new CellHash(1024);      // (level, cx, cy) -> head entry
     this.ids  = new Map();               // external id -> slot
+    // Slot -> external id lives in a Float64Array (`ext`), which can only hold
+    // numbers. Non-numeric ids get this parallel sparse array instead. It stays
+    // null until the first one arrives, so an all-numeric index -- and the
+    // tie-break on the insertion hot path -- never leaves the typed array.
+    this.extStr = null;
+    // Reused by the Feature entry points so that reading a Feature allocates
+    // nothing: [id, lng, lat, props].
+    this._fs = [0, 0, 0, undefined];
     this.eSlot = new Int32Array(1024); this.eNext = new Int32Array(1024);
     this._eCap = 1024; this._eN = 0; this._eFree = NONE;
 
@@ -163,7 +176,12 @@ export class NetCluster {
     }
   }
 
-  _free(s) { this.par[s] = this._freeHead; this._freeHead = s; this.tz[s] = -2; this.data[s] = undefined; }
+  _free(s) {
+    this.par[s] = this._freeHead; this._freeHead = s; this.tz[s] = -2;
+    this.data[s] = undefined;
+    // or the slot's next tenant inherits this one's id
+    if (this.extStr !== null) this.extStr[s] = undefined;
+  }
 
   // ------------------------------------------------------------------ grid --
   // One bucket list per (level, cell). A center of C_z is listed in the grid of
@@ -312,7 +330,7 @@ export class NetCluster {
         const d2 = dx * dx + dy * dy;
         // exact ties are broken on id so the structure is a function of the
         // point set and op order alone -- never of hash/chain iteration order
-        if (d2 < bd || (d2 === bd && String(this.ext[s]) < String(this.ext[bs]))) { bd = d2; bs = s; }
+        if (d2 < bd || (d2 === bd && String(this._extId(s)) < String(this._extId(bs)))) { bd = d2; bs = s; }
       }
       this._dLevel = z + 1; this._dParent = bs;
       return;
@@ -431,12 +449,30 @@ export class NetCluster {
       this.cat[s] = c;
     }
     this._selfMass(s);
-    this.ext[s] = id;
+    this.ext[s] = id;                    // NaN for a non-numeric id; see _extId
+    if (typeof id !== 'number') {
+      if (this.extStr === null) this.extStr = [];
+      this.extStr[s] = id;
+    }
     if (props !== undefined) this.data[s] = props;
     this.ids.set(id, s);
     this._link(s);
     this.stats.inserts++;
     return s;
+  }
+
+  /**
+   * The id this slot was inserted under, whatever its type.
+   *
+   * Without the overlay a string id would come back as the NaN the
+   * Float64Array actually stored -- `null` once serialised -- and, worse, every
+   * string id would compare equal in the placement tie-break, which is what
+   * makes the tree a function of the point set rather than of arrival order.
+   */
+  _extId(s) {
+    if (this.extStr === null) return this.ext[s];
+    const v = this.extStr[s];
+    return v === undefined ? this.ext[s] : v;
   }
 
   remove(id) {
@@ -555,6 +591,96 @@ export class NetCluster {
   has(id) { return this.ids.has(id); }
 
   get size() { return this.ids.size; }
+
+  // --------------------------------------------------------------- GeoJSON --
+  // Interop with the rest of the mapping ecosystem. These are a thin reading
+  // layer over insert/moveTo, not a second code path: a Feature is unpacked into
+  // the same four values the flat API takes and the wrapper is dropped, so the
+  // index that results is byte-for-byte the one you would have built by hand.
+
+  /**
+   * Insert one GeoJSON Feature. Moves it instead if the id is already known,
+   * exactly like `insert`.
+   *
+   * The id comes from `feature.id`, where GeoJSON says it belongs, falling back
+   * to `properties[idField]`. `properties` is stored as-is -- by reference, as
+   * with `insert` -- and the Feature, its geometry and its coordinates array are
+   * not retained.
+   */
+  insertFeature(feature) {
+    const f = readFeature(feature, this.idField, this._fs, 'feature');
+    return this.insert(f[0], f[1], f[2], f[3]);
+  }
+
+  /** Report a new position for one GeoJSON Feature. Inserts if the id is new. */
+  moveToFeature(feature) {
+    const f = readFeature(feature, this.idField, this._fs, 'feature');
+    return this.moveTo(f[0], f[1], f[2], f[3]);
+  }
+
+  /**
+   * Ingest a FeatureCollection, an array of Features, or a single Feature.
+   *
+   * @returns how many features were ingested.
+   *
+   * Two things differ from supercluster's `load`, both deliberately:
+   *
+   *  - It **upserts** rather than replaces. Loading twice leaves the union, with
+   *    the second position winning for any repeated id; it does not throw away
+   *    what is already indexed. There is no "reload" here because there is no
+   *    rebuild -- that is the whole point of the library.
+   *  - It **does not retain the input**. supercluster keeps the array forever,
+   *    because its queries hand your original Feature objects back. NetCluster
+   *    copies out the four values it needs, so once this returns you can let the
+   *    parsed GeoJSON go and the index costs what it would have cost had you
+   *    called `insert` directly.
+   *
+   * Not transactional: a bad feature throws with its index, and the features
+   * before it are already in. Pass `{ onError: 'skip' }` to ingest what parses
+   * and ignore the rest, which is usually what you want for a file from
+   * elsewhere -- compare the return value against the input length to see how
+   * much was dropped.
+   */
+  load(data, options) {
+    const [fs, label] = featuresOf(data);
+    const skip = options !== undefined && options.onError === 'skip';
+    const scratch = this._fs;
+    let n = 0;
+    for (let i = 0; i < fs.length; i++) {
+      if (skip) {
+        try { readFeature(fs[i], this.idField, scratch, `${label}[${i}]`); }
+        catch { continue; }
+      } else {
+        readFeature(fs[i], this.idField, scratch, `${label}[${i}]`);
+      }
+      this.moveTo(scratch[0], scratch[1], scratch[2], scratch[3]);
+      n++;
+    }
+    return n;
+  }
+
+  /**
+   * The clusters visible in `bbox` at `zoom`, wrapped as a FeatureCollection --
+   * the shape `map.getSource(id).setData()` and `L.geoJSON()` want.
+   *
+   * Identical contents to `getClusters`, which returns the bare array.
+   */
+  getFeatureCollection(bbox, zoom, category = -1) {
+    return { type: 'FeatureCollection', features: this.getClusters(bbox, zoom, category) };
+  }
+
+  /**
+   * Every live point as a FeatureCollection, unclustered, in insertion order.
+   *
+   * For export and round-tripping. This materialises one Feature per point, so
+   * at half a million points it costs far more than the index does -- it is not
+   * a way to draw a map. `getFeatureCollection` is.
+   */
+  toGeoJSON() {
+    const features = [];
+    for (const s of this.ids.values()) features.push(this._leafFeature(s));
+    return { type: 'FeatureCollection', features };
+  }
 
   // ----------------------------------------------------------------- query --
   /**
@@ -691,9 +817,10 @@ export class NetCluster {
     const y2 = my / PREC;
     const lat = 360 * Math.atan(Math.exp((0.5 - y2) * 2 * Math.PI)) / Math.PI - 90;
     if (count === 1) {
+      const id = this._extId(s);
       return { type: 'Feature',
-        properties: this.data[s] !== undefined ? this.data[s] : { id: this.ext[s] },
-        id: this.ext[s],
+        properties: this.data[s] !== undefined ? this.data[s] : { id },
+        id,
         geometry: { type: 'Point', coordinates: [lng, lat] } };
     }
     return { type: 'Feature',
@@ -775,8 +902,9 @@ export class NetCluster {
     const lng = this.qx[s] / PREC * 360 - 180;
     const y2 = this.qy[s] / PREC;
     const lat = 360 * Math.atan(Math.exp((0.5 - y2) * 2 * Math.PI)) / Math.PI - 90;
-    return { type: 'Feature', id: this.ext[s],
-      properties: this.data[s] !== undefined ? this.data[s] : { id: this.ext[s] },
+    const id = this._extId(s);
+    return { type: 'Feature', id,
+      properties: this.data[s] !== undefined ? this.data[s] : { id },
       geometry: { type: 'Point', coordinates: [lng, lat] } };
   }
 
@@ -789,7 +917,8 @@ export class NetCluster {
   }
 
   memoryBytes() {
-    return this._cap * (2 * 8 + 7 * 4) + this._eCap * 8 + this.grid.bytes() + this.ids.size * 40;
+    return this._cap * (2 * 8 + 7 * 4) + this._eCap * 8 + this.grid.bytes() + this.ids.size * 40 +
+           (this.extStr === null ? 0 : this.extStr.length * 8);
   }
 
   /** sum_z |C_z| : how many (center, level) pairs the grid holds */

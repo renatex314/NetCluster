@@ -2,7 +2,10 @@
  * NetCluster backed by Redis — the index lives in Redis, Node stays stateless.
  * https://github.com/renatex314/NetCluster
  */
-import type { BBox, DeviceId, NetClusterFeature } from '../src/index.js';
+import type {
+  BBox, DeviceId, NetClusterFeature,
+  InputPointFeature, InputFeatureCollection, LoadOptions,
+} from '../src/index.js';
 
 /**
  * The slice of an ioredis client this uses. Typed structurally so the package
@@ -32,6 +35,11 @@ export interface RedisNetClusterOptions {
    * else, so this is the head-of-line delay other clients see. Default 25.
    */
   maxPipeline?: number;
+  /**
+   * Which property holds the id when a GeoJSON Feature passed to `load` has no
+   * `id` of its own. Default 'id'.
+   */
+  idField?: string;
 }
 
 /** 0 unchanged · 1 inserted · 2 moved · 3 moved with a local repair. */
@@ -64,6 +72,19 @@ export declare class RedisNetCluster<P = Record<string, unknown>> {
 
   /** Bulk upsert, split into pipelines of `maxPipeline`. */
   upsertMany(points: Array<{ id: DeviceId; lng: number; lat: number }>): Promise<UpsertResult[]>;
+
+  /**
+   * Ingest GeoJSON. Upserts rather than replaces.
+   *
+   * `properties` are **dropped** — this backend keeps position and structure in
+   * Redis and nothing else. They are still read for the id fallback.
+   *
+   * @returns how many features were ingested.
+   */
+  load<P = unknown>(
+    data: InputFeatureCollection<P> | Array<InputPointFeature<P>> | InputPointFeature<P>,
+    options?: LoadOptions,
+  ): Promise<number>;
 
   /** @returns 1 if the point existed, 0 otherwise. */
   remove(id: DeviceId): Promise<0 | 1>;

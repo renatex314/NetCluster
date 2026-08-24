@@ -44,11 +44,32 @@ app.post('/devices/:id', async (req, reply) => {
   return { result: ['unchanged', 'inserted', 'moved', 'moved+repaired'][r] };
 });
 
-/** Batch of position reports; sent as one Redis pipeline. */
+/**
+ * Batch of position reports; sent as one Redis pipeline.
+ *
+ * Takes either the compact form -- `[{id, lng, lat}, ...]` -- or GeoJSON: a
+ * FeatureCollection, or a single Feature. A bare array is always the compact
+ * form, so the two can never be confused. GeoJSON `properties` are read for the
+ * id fallback and then dropped: this backend stores position and structure and
+ * nothing else.
+ */
 app.post('/devices', async (req, reply) => {
   const points = req.body;
+  if (points && !Array.isArray(points) &&
+      (Array.isArray(points.features) || points.type === 'Feature')) {
+    const fs = points.type === 'Feature' ? [points] : points.features;
+    if (fs.length === 0) return reply.code(400).send({ error: 'the FeatureCollection is empty' });
+    if (fs.length > 10000) return reply.code(413).send({ error: 'batch limited to 10000 points' });
+    try {
+      return { accepted: await index.load(points) };
+    } catch (e) {
+      return reply.code(400).send({ error: e.message });
+    }
+  }
   if (!Array.isArray(points) || points.length === 0) {
-    return reply.code(400).send({ error: 'expected a non-empty array of {id, lng, lat}' });
+    return reply.code(400).send({
+      error: 'expected a non-empty array of {id, lng, lat}, or a GeoJSON FeatureCollection',
+    });
   }
   if (points.length > 10000) return reply.code(413).send({ error: 'batch limited to 10000 points' });
   for (const p of points) {

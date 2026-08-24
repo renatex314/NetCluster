@@ -31,6 +31,11 @@ export interface NetClusterOptions {
   categories?: number;
   /** Property name holding the category on inserted points. Default 'category'. */
   categoryField?: string;
+  /**
+   * Where `insertFeature` / `load` look for the id when a GeoJSON Feature has no
+   * `id` of its own. Default 'id'.
+   */
+  idField?: string;
 }
 
 export interface ClusterProperties {
@@ -63,6 +68,44 @@ export interface SinglePointFeature<P = Record<string, unknown>> {
 }
 
 export type NetClusterFeature<P = Record<string, unknown>> = ClusterFeature | SinglePointFeature<P>;
+
+/** What `getFeatureCollection` and `toGeoJSON` return. */
+export interface NetClusterFeatureCollection<P = Record<string, unknown>> {
+  type: 'FeatureCollection';
+  features: Array<NetClusterFeature<P>>;
+}
+
+/**
+ * A GeoJSON Feature accepted by `insertFeature` / `moveToFeature` / `load`.
+ *
+ * Looser than what comes back out: the id may sit on the feature (where GeoJSON
+ * puts it) or in `properties[idField]`, `properties` may be null, and a third
+ * coordinate is allowed and ignored. The geometry must be a Point.
+ */
+export interface InputPointFeature<P = Record<string, unknown>> {
+  type: 'Feature';
+  id?: DeviceId;
+  properties: P | null;
+  geometry: {
+    type: 'Point';
+    /** [longitude, latitude] or [longitude, latitude, altitude]. */
+    coordinates: [number, number] | [number, number, number] | number[];
+  };
+}
+
+export interface InputFeatureCollection<P = Record<string, unknown>> {
+  type: 'FeatureCollection';
+  features: Array<InputPointFeature<P>>;
+}
+
+export interface LoadOptions {
+  /**
+   * 'throw' (default) stops at the first feature that cannot be read, naming its
+   * index. 'skip' ingests everything that parses; compare the return value with
+   * the input length to see how much was dropped.
+   */
+  onError?: 'throw' | 'skip';
+}
 
 /** Narrow a feature to a cluster. */
 export declare function isCluster<P>(f: NetClusterFeature<P>): f is ClusterFeature;
@@ -110,6 +153,30 @@ export declare class NetCluster<P = Record<string, unknown>> {
   /** Report a new position. Inserts if the id is unknown. */
   moveTo(id: DeviceId, lng: number, lat: number, props?: P): number;
 
+  /**
+   * Insert one GeoJSON Feature; moves it if the id is already known.
+   *
+   * The wrapper, its geometry and its coordinates array are read and dropped --
+   * only `properties` is retained, exactly as `insert` retains it.
+   */
+  insertFeature(feature: InputPointFeature<P>): number;
+
+  /** Report a new position for one GeoJSON Feature. Inserts if the id is new. */
+  moveToFeature(feature: InputPointFeature<P>): number;
+
+  /**
+   * Ingest a FeatureCollection, an array of Features, or one Feature.
+   *
+   * Unlike supercluster's `load`, this **upserts** instead of replacing, and does
+   * not retain the input.
+   *
+   * @returns how many features were ingested.
+   */
+  load(
+    data: InputFeatureCollection<P> | Array<InputPointFeature<P>> | InputPointFeature<P>,
+    options?: LoadOptions,
+  ): number;
+
   /** @returns true if the point existed. */
   remove(id: DeviceId): boolean;
 
@@ -118,6 +185,18 @@ export declare class NetCluster<P = Record<string, unknown>> {
    * @param category with `categories` enabled, restrict to one category.
    */
   getClusters(bbox: BBox, zoom: number, category?: number): Array<NetClusterFeature<P>>;
+
+  /**
+   * The same features `getClusters` returns, wrapped as a FeatureCollection --
+   * the shape `setData()` and `L.geoJSON()` want.
+   */
+  getFeatureCollection(bbox: BBox, zoom: number, category?: number): NetClusterFeatureCollection<P>;
+
+  /**
+   * Every live point as a FeatureCollection, unclustered, in insertion order.
+   * For export, not for drawing: it materialises one object per point.
+   */
+  toGeoJSON(): NetClusterFeatureCollection<P>;
 
   /** Clusters for one Web-Mercator tile, in tile-extent coordinates. */
   getTile(z: number, x: number, y: number): Tile<P> | null;

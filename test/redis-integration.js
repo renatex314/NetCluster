@@ -280,6 +280,48 @@ console.log(`  ok pod killed mid-write: index still consistent (${st3.points} po
   await hidx.drop();
 }
 
+// GeoJSON ingest goes through the same upsert path, so the resulting index must
+// be the one the compact form would have built -- and properties must be dropped
+// rather than half-stored.
+{
+  const g = new RedisNetCluster(redis, { prefix: 'ncgeo' });
+  await g.drop(); await g.init();
+  const mem = new NetCluster();
+  const pts = [];
+  for (let i = 0; i < 300; i++) { const [lng, lat] = pick(); pts.push([lng, lat]); }
+
+  const n = await g.load({ type: 'FeatureCollection', features: pts.map(([lng, lat], i) => ({
+    type: 'Feature', id: 'g' + i, properties: { plate: 'ABC-' + i },
+    geometry: { type: 'Point', coordinates: [lng, lat] },
+  })) });
+  if (n !== 300) fail(`load() reported ${n}, expected 300`);
+  for (let i = 0; i < 300; i++) mem.insert('g' + i, pts[i][0], pts[i][1]);
+
+  if ((await g.size()) !== mem.size) fail(`load() size ${await g.size()} vs ${mem.size}`);
+  for (let z = 0; z <= 16; z += 4) {
+    const a = (await g.getClusters([-180, -85, 180, 85], z)).length;
+    const b = mem.getClusters([-180, -85, 180, 85], z).length;
+    if (a !== b) fail(`z=${z}: GeoJSON load produced ${a} clusters, in-process ${b}`);
+  }
+  const [f] = await g.getClusters([-180, -85, 180, 85], 16);
+  if (f.properties.plate !== undefined) fail('the Redis backend must not claim to store properties');
+
+  // idField, and the same errors as in-process
+  const p = new RedisNetCluster(redis, { prefix: 'ncgeo2', idField: 'plate' });
+  await p.drop(); await p.init();
+  await p.load([{ type: 'Feature', properties: { plate: 'XYZ-1' },
+                  geometry: { type: 'Point', coordinates: [-46.6, -23.5] } }]);
+  if (!(await p.has('XYZ-1'))) fail('idField was not honoured by the Redis backend');
+  let threw = false;
+  try {
+    await p.load([{ type: 'Feature', id: 'x', properties: null,
+                    geometry: { type: 'Polygon', coordinates: [] } }]);
+  } catch (e) { threw = /Polygon/.test(e.message); }
+  if (!threw) fail('a Polygon must be rejected by the Redis backend too');
+  console.log('  ok GeoJSON: load() matches the in-process index, drops properties, honours idField');
+  await g.drop(); await p.drop();
+}
+
 await idx.drop();
 for (const c of clients) c.disconnect();
 killed.disconnect();

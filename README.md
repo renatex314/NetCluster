@@ -74,7 +74,7 @@ index.has('vehicle-0');                     // false
 
 Runnable version: [`examples/basic.js`](examples/basic.js).
 
-`getClusters` returns GeoJSON features in supercluster's shape, so an existing frontend needs no changes.
+`getClusters` returns GeoJSON features in supercluster's shape, so an existing frontend needs no changes. GeoJSON goes in as well as out — see [GeoJSON](#geojson).
 
 ## Quick start — Redis, stateless pods
 
@@ -176,6 +176,73 @@ index.getClusters(bbox, zoom);      // everything
 
 Costs 20 bytes per point per category. Counts and centroids are exact; you get 0–7% more markers than an index built only from the matching points, because the tree was shaped by all of them. Details and the trade-off in [`docs/FILTERING.md`](docs/FILTERING.md).
 
+## GeoJSON
+
+Output has always been GeoJSON in supercluster's shape. Input works too:
+
+```js
+const index = new NetCluster();
+
+// a FeatureCollection, an array of Features, or one Feature
+index.load(await (await fetch('/fleet.geojson')).json());
+
+index.insertFeature(feature);            // one, or
+index.moveToFeature(feature);            // one that already exists
+
+index.getClusters(bbox, 11);             // Feature[]
+index.getFeatureCollection(bbox, 11);    // { type: 'FeatureCollection', features }
+index.toGeoJSON();                       // every live point, unclustered
+```
+
+`getFeatureCollection` is the shape `map.getSource(id).setData()` and `L.geoJSON()` want.
+
+**Reading rules.** The id comes from `feature.id`, where GeoJSON says it belongs,
+falling back to `properties.id` — or `properties[idField]` if you set that option.
+`properties` is kept as-is, so `properties.category` feeds the [category
+filter](#filtering-by-a-property) exactly as it does on `insert`; `null` means "no
+properties". A third coordinate is altitude, and is ignored. Anything that is not
+a Point geometry is rejected rather than quietly reduced to a centroid, and every
+error names the offending feature by index (`features[8123]`), because the
+alternative is bisecting a 200 MB file.
+
+Two things differ from supercluster's `load`, both deliberately:
+
+- It **upserts** rather than replaces. Loading twice leaves the union, newest
+  position winning. There is no "reload" here because there is no rebuild.
+- It **does not retain the input.** The Feature wrapper, its `geometry` object and
+  its `coordinates` array are read once and dropped.
+
+That second one is the whole reason to have a separate flat API at all, and it is
+measurable. 500,000 points, resident after ingest with the parsed GeoJSON dropped:
+
+| ingested via | resident | vs flat |
+|---|---|---|
+| `insert(id, lng, lat)` | 119.4 MB | — |
+| `load()`, `properties: null` | 120.3 MB | +0.9 MB |
+| `load()`, keeping properties | 148.9 MB | +29.5 MB |
+| supercluster `load()` | 288.9 MB | +169.5 MB |
+
+Reading a Feature instead of taking flat arguments costs **+157 ns/point (7%)** on
+ingest, and nothing afterwards.
+
+**Where the difference actually comes from.** A GeoJSON point is three nested
+objects and an array — the Feature, its `geometry`, its `coordinates`, plus
+`properties` — and V8 charges 40–100+ bytes for each object shell before any of
+your data. NetCluster reads the four values it needs into typed-array slots and
+lets the wrappers become garbage, so it keeps only what you would have given
+`insert` by hand. supercluster keeps the array on `this.points` for the life of
+the index, because `getClusters` / `getChildren` / `getLeaves` hand your original
+Feature objects back — that is not a flaw, it is what returning your own objects
+costs, and it is why the two lean rows above agree and the last one does not.
+
+The 29.5 MB row is the honest caveat: `properties` is retained either way. What
+GeoJSON ingest saves you is the *wrapper*, not your data. If your points are
+already flowing through the app as GeoJSON, you pay for parsing it no matter which
+library you use — the difference is only whether you are still paying once the
+index is built.
+
+Reproduce with `node --expose-gc bench/geojson.js`.
+
 ## Options
 
 | option | default | |
@@ -187,6 +254,7 @@ Costs 20 bytes per point per category. Counts and centroids are exact; you get 0
 | `hysteresis` | `0.25` | how far an assignment stretches before a point is re-homed |
 | `categories` | `0` | number of filter categories (0 = off) |
 | `categoryField` | `'category'` | which property holds the category index |
+| `idField` | `'id'` | which property holds the id, when a GeoJSON Feature has no `id` of its own |
 
 The same options configure the Redis backend, which additionally takes `prefix`
 and `maxPipeline`.
@@ -229,10 +297,11 @@ noisy about.
 src/            the index — zero dependencies
   netcluster.js   the hierarchy of nets
   cellhash.js     typed-array hash map
+  geojson.js      GeoJSON reading, kept out of the hot path
 server/         Redis backend — index in Redis, stateless Node
   lua/            the operations, atomic
   server.js       HTTP API (Fastify)
-test/           invariants, API, filtering, Redis integration
+test/           invariants, API, GeoJSON, filtering, Redis integration
 bench/          every measurement quoted above
 docs/           the research this came from, and the original brief
 ```
