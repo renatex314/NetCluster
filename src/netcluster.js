@@ -623,17 +623,16 @@ export class NetCluster {
    *
    * @returns how many features were ingested.
    *
-   * Two things differ from supercluster's `load`, both deliberately:
+   * Two things worth knowing, both deliberate:
    *
    *  - It **upserts** rather than replaces. Loading twice leaves the union, with
    *    the second position winning for any repeated id; it does not throw away
    *    what is already indexed. There is no "reload" here because there is no
    *    rebuild -- that is the whole point of the library.
-   *  - It **does not retain the input**. supercluster keeps the array forever,
-   *    because its queries hand your original Feature objects back. NetCluster
-   *    copies out the four values it needs, so once this returns you can let the
-   *    parsed GeoJSON go and the index costs what it would have cost had you
-   *    called `insert` directly.
+   *  - It **does not retain the input**. Only the four values it needs are
+   *    copied out, so once this returns you can let the parsed GeoJSON go and
+   *    the index costs what it would have cost had you called `insert`
+   *    directly.
    *
    * Not transactional: a bad feature throws with its index, and the features
    * before it are already in. Pass `{ onError: 'skip' }` to ingest what parses

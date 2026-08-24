@@ -54,7 +54,7 @@ metade do raio — garantia bicritério de `r`-nets, válida sempre, sem rebuild
 | inserir / remover | 2,07 µs / 7,8 µs | idem |
 | build (N=100k) | 177 ms | 182 ms |
 | consulta viewport z10 (N=1M) | 0,023 ms | 0,021 ms |
-| memória (N=500k) | **119 MB** | 289 MB |
+| memória (N=500k) | **127 MB** | 289 MB |
 
 - **Qualidade**: contagem de clusters e raio dentro de ~1% do supercluster em
   todos os zooms. Grade fixa, no mesmo teste: 43% mais marcadores e 15–23% dos
@@ -77,7 +77,7 @@ metade do raio — garantia bicritério de `r`-nets, válida sempre, sem rebuild
 - Raio **máximo** pior que o de um rebuild sob convergência forte (94,6 px vs
   64,7 px; limite provado `2(1+h)·r` = 100 px). Ajustável por `hysteresis`.
 - Remoção é 3,6× mais cara que inserção (cascata de re-hospedagem).
-- Memória O(N) com constante ~4,2 listagens de grade por ponto (119 MB para 500k).
+- Memória O(N) com constante ~4,2 listagens de grade por ponto (127 MB para 500k).
 - Código novo: tem verificação exaustiva de invariantes, não tem anos de produção.
 
 ## Arquivos

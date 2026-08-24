@@ -13,10 +13,9 @@
  *
  * So steady-state memory after `load()` is identical to the flat path -- you pay
  * GeoJSON's object overhead while parsing, not for as long as the index lives.
- * supercluster cannot make that trade: `load()` keeps the array you handed it
- * (`this.points`) for the lifetime of the index, because getClusters/getChildren/
- * getLeaves return your original Feature objects. NetCluster answers those from
- * its own arena, so once `load()` returns, the wrappers are garbage.
+ * What makes that possible is that queries build their own result features from
+ * the arena rather than handing your objects back, so nothing downstream needs
+ * the input to stay alive: once `load()` returns, the wrappers are garbage.
  */
 
 /**

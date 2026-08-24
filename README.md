@@ -155,7 +155,7 @@ These are the invariants of a hierarchy of nets ([Gao, Guibas & Nguyen 2004](htt
 | insert / remove one point | 2.07 µs / 7.8 µs | ~850 ms |
 | build 100k | 177 ms | 182 ms |
 | viewport query, z10 @ 1M | 0.023 ms | 0.021 ms |
-| memory @ 500k | 119 MB | 289 MB |
+| memory @ 500k | 127 MB | 289 MB |
 | cluster count / radius | within 1% of supercluster at every zoom | — |
 
 Stability: after **5,000,000 continuous moves with no rebuild**, quality stays within 1.2% of a freshly built index and throughput is flat. Update cost does not grow with local density — it *falls*, from 2.14 µs to 0.52 µs as density rises by 10⁶.
@@ -178,7 +178,7 @@ Costs 20 bytes per point per category. Counts and centroids are exact; you get 0
 
 ## GeoJSON
 
-Output has always been GeoJSON in supercluster's shape. Input works too:
+GeoJSON goes both ways. Queries have always returned it; input works too:
 
 ```js
 const index = new NetCluster();
@@ -205,41 +205,39 @@ a Point geometry is rejected rather than quietly reduced to a centroid, and ever
 error names the offending feature by index (`features[8123]`), because the
 alternative is bisecting a 200 MB file.
 
-Two things differ from supercluster's `load`, both deliberately:
+`load` **upserts**. Loading twice leaves the union, newest position winning — it
+does not discard what is already indexed. There is no "reload" here because there
+is no rebuild, which is the whole point of the library.
 
-- It **upserts** rather than replaces. Loading twice leaves the union, newest
-  position winning. There is no "reload" here because there is no rebuild.
-- It **does not retain the input.** The Feature wrapper, its `geometry` object and
-  its `coordinates` array are read once and dropped.
+**It does not retain what you hand it.** The Feature wrapper, its `geometry`
+object and its `coordinates` array are read once and dropped; only `properties`
+survives, because the flat path keeps that too. Queries build their result
+features from the index's own arena rather than handing your objects back, so
+nothing downstream needs the input to stay alive.
 
-That second one is the whole reason to have a separate flat API at all, and it is
-measurable. 500,000 points, resident after ingest with the parsed GeoJSON dropped:
+That is measurable. 500,000 points, resident after ingest with the parsed GeoJSON
+released:
 
 | ingested via | resident | vs flat |
 |---|---|---|
-| `insert(id, lng, lat)` | 119.4 MB | — |
-| `load()`, `properties: null` | 120.3 MB | +0.9 MB |
-| `load()`, keeping properties | 148.9 MB | +29.5 MB |
-| supercluster `load()` | 288.9 MB | +169.5 MB |
+| `insert(id, lng, lat)` | 127.4 MB | — |
+| `load()`, `properties: null` | 128.3 MB | +0.9 MB |
+| `load()`, keeping properties | 148.9 MB | +21.5 MB |
 
-Reading a Feature instead of taking flat arguments costs **+157 ns/point (7%)** on
+The first two rows agreeing is the claim: **ingesting through GeoJSON does not
+make the index bigger.** A GeoJSON point is three nested objects and an array —
+the Feature, its `geometry`, its `coordinates`, plus `properties` — and V8 charges
+40–100+ bytes for each object shell before any of your data, so an index that held
+onto them would cost several times what the same points cost through `insert`.
+
+The third row is your data, not GeoJSON's packaging: 20.6 MB for 500,000 `{ id }`
+objects, which `insert` retains identically when you pass it the same object. So
+what reading GeoJSON saves you is the wrapper, and only the wrapper. If your
+points already flow through the app as GeoJSON you pay to parse them regardless;
+the question is whether you are still paying once the index is built.
+
+Reading a Feature instead of taking flat arguments costs **+160 ns/point (7%)** on
 ingest, and nothing afterwards.
-
-**Where the difference actually comes from.** A GeoJSON point is three nested
-objects and an array — the Feature, its `geometry`, its `coordinates`, plus
-`properties` — and V8 charges 40–100+ bytes for each object shell before any of
-your data. NetCluster reads the four values it needs into typed-array slots and
-lets the wrappers become garbage, so it keeps only what you would have given
-`insert` by hand. supercluster keeps the array on `this.points` for the life of
-the index, because `getClusters` / `getChildren` / `getLeaves` hand your original
-Feature objects back — that is not a flaw, it is what returning your own objects
-costs, and it is why the two lean rows above agree and the last one does not.
-
-The 29.5 MB row is the honest caveat: `properties` is retained either way. What
-GeoJSON ingest saves you is the *wrapper*, not your data. If your points are
-already flowing through the app as GeoJSON, you pay for parsing it no matter which
-library you use — the difference is only whether you are still paying once the
-index is built.
 
 Reproduce with `node --expose-gc bench/geojson.js`.
 

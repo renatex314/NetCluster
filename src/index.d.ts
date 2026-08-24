@@ -167,8 +167,7 @@ export declare class NetCluster<P = Record<string, unknown>> {
   /**
    * Ingest a FeatureCollection, an array of Features, or one Feature.
    *
-   * Unlike supercluster's `load`, this **upserts** instead of replacing, and does
-   * not retain the input.
+   * **Upserts** rather than replacing, and does not retain the input.
    *
    * @returns how many features were ingested.
    */

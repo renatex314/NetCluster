@@ -16,10 +16,16 @@ if (which === 'net') {
   idx = new Supercluster({ radius: 40, maxZoom: 16, minZoom: 0 });
   idx.load(geojson(pts));            // supercluster retains this array (getLeaves needs it)
 }
-global.gc(); global.gc();
+// Pin both the index and the source coordinates. `pts` is a Float64Array of
+// exactly 8 MB, and whether V8 still considers it reachable at the second sample
+// depends on its scope analysis rather than on the index -- left to chance it
+// silently subtracted those 8 MB, which is why this read 119.4 MB while
+// bench/ops.js, measuring the same index a different way, read 127.4 MB.
+globalThis.__pin = [idx, pts];
+global.gc(); global.gc(); global.gc();
 const after = process.memoryUsage();
 const mb = (b) => (b / 1e6).toFixed(1);
 console.log(`${which.padEnd(13)} heap ${mb(after.heapUsed - base.heapUsed).padStart(7)} MB` +
             `  external ${mb(after.external - base.external).padStart(6)} MB` +
             `  total ${mb((after.heapUsed + after.external) - (base.heapUsed + base.external)).padStart(7)} MB`);
-if (idx.getClusters) idx.getClusters([-180, -85, 180, 85], 8);   // keep it alive past the measurement
+if (idx.getClusters) idx.getClusters([-180, -85, 180, 85], 8);   // keep it alive past the read

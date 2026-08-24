@@ -150,7 +150,7 @@ export class RedisNetCluster {
     }
   }
 
-  /** @returns GeoJSON features, same shape as the in-process index and supercluster */
+  /** @returns GeoJSON features, the same shape the in-process index returns */
   async getClusters(bbox, zoom, limit = 5000) {
     let [x0, y0] = project(bbox[0], bbox[3]);
     let [x1, y1] = project(bbox[2], bbox[1]);
