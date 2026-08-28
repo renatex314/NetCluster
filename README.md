@@ -184,6 +184,8 @@ index.getClusters(bbox, zoom);                                    // everything
 
 Filters **combine** (`client 7 AND enroute`), a device may hold **several values** for one dimension, and reporting it again with different values **re-files it** — even when it has not moved, which is exactly what a status change looks like. Counts and centroids are exact throughout.
 
+**You declare how many values there can be, not what they are.** `client: { values: 40 }` is a *count* — indices `0..39`, nothing enumerated — while a list like `['idle', 'enroute']` names them so queries can use the names. An unused range costs nothing: declaring 100,000 possible clients over 50,000 devices measures 45 MB, because memory tracks the values that actually occur rather than the ones you allowed for. A value in range that nothing has reported returns an empty result, not an error.
+
 The single-category spelling still works and costs what it always did:
 
 ```js
@@ -194,7 +196,9 @@ index.getClusters(bbox, zoom, 3);
 
 At 200k points a filtered query is 0.04–0.08 ms — faster than an unfiltered one, since a subtree holding none of the requested value is pruned outright. You pay on writes and in memory: each declared shape is a separate aggregate, so three shapes cost about three times one. Sizing, layouts and the 0–7% extra markers you get from filtering a shared tree are in [`docs/FILTERING.md`](docs/FILTERING.md).
 
-What it still cannot do: substring search, ranges, `OR` across values, or anything read out of `properties`. Those and [why pulling every point out and filtering yourself loses points](docs/FILTERING.md#do-not-enumerate-the-index) are covered there too.
+What it still cannot do: substring search, ranges, `OR` across values, or anything read out of `properties`. Nor a field whose distinct values **never stop growing** — a per-trip id — since every shape holds a running total per combination per device per tree level, so values that never repeat give each device its own bucket and the aggregates become a second copy of the fleet. Those and [why pulling every point out and filtering yourself loses points](docs/FILTERING.md#do-not-enumerate-the-index) are covered there too.
+
+The server takes this a step further: a dimension declared with a `capacity` interns arbitrary labels as they arrive, so ids that climb into the millions fit behind a ceiling of a few thousand. Here the count form covers the same ground whenever your values are integers within a known range.
 
 ## GeoJSON
 

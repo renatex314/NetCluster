@@ -55,6 +55,13 @@ const index = new NetCluster({
 });
 ```
 
+**You declare how many values there can be, not what they are.** A count is a
+range: `{ values: 100000 }` accepts any index below it, nothing is enumerated, and
+an unused range costs nothing — memory tracks the values that actually occur. On
+the server the equivalent is `capacity`, which additionally interns arbitrary
+labels, so auto-increment ids in the millions fit behind a ceiling of a few
+thousand.
+
 On the server the same thing is a `PUT`:
 
 ```bash
@@ -258,6 +265,7 @@ The filter is exact matching on values declared up front. It cannot express:
 | `plate CONTAINS "abc"` | a substring match has nothing to keep a running count of | resolve the text to ids in your own database; see [Searching by text](#searching-by-text) |
 | `speed > 80` | ranges are not values | bucket it: a dimension per speed band |
 | `client 7 OR client 9` | a query names one value per dimension | two queries, or a dimension whose values are the groups you actually ask about |
+| a field whose values never repeat | a per-trip id gives every device its own cell, so the aggregates become a second copy of the fleet and any ceiling fills | it is a lookup, not a map filter — see [Searching by text](#searching-by-text) |
 | anything in `properties` | `properties` are opaque payload, never indexed | make it a dimension if it has few values |
 
 ## Do not enumerate the index
