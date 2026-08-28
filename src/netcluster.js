@@ -1,5 +1,6 @@
 import { CellHash } from './cellhash.js';
 import { readFeature, featuresOf } from './geojson.js';
+import { Schema } from './dimensions.js';
 
 /**
  * NetCluster -- fully dynamic hierarchical geospatial clustering.
@@ -43,6 +44,9 @@ const KEY_Y = 2 ** MAX_CELL_BITS;
 const KEY_X = 2 ** (MAX_CELL_BITS * 2);
 
 const NONE = -1;
+// Cell space reserved per slot in the aggregate key. Slot * CELL_SPAN + cell
+// must stay an exact float64 integer, which caps the index at 2^29 slots.
+const CELL_SPAN = 1 << 24;
 
 export class NetCluster {
   constructor(options = {}) {
@@ -55,11 +59,12 @@ export class NetCluster {
     // fewer visible cluster changes ("recourse") under continuous motion.
     this.hysteresis = options.hysteresis ?? 0.25;
 
-    // Optional per-category aggregates. Declaring K categories up front lets a
-    // filtered viewport query ("only status 3") be answered from precomputed
-    // sums instead of walking subtrees. The tree itself is unchanged -- only the
-    // aggregate carried at each node gains K slices -- so a point still touches
-    // exactly one slice per level and the update cost does NOT grow with K.
+    // Optional filter aggregates. Declaring dimensions up front lets a filtered
+    // viewport query ("only status 3", "client 7 and enroute") be answered from
+    // precomputed sums instead of walking subtrees. The tree itself is unchanged
+    // -- only the aggregate carried at each node gains entries. See
+    // `dimensions.js` for what a dimension, a shape and a cell are.
+    this.schema = new Schema(options);
     this.categories = options.categories ?? 0;
     this.categoryField = options.categoryField ?? 'category';
     // Where insertFeature/load look for the id when the Feature has no `id`
@@ -106,6 +111,44 @@ export class NetCluster {
     this.eSlot = new Int32Array(1024); this.eNext = new Int32Array(1024);
     this._eCap = 1024; this._eN = 0; this._eFree = NONE;
 
+    // Two representations, one interface.
+    //
+    // A small cell space is stored DENSELY, `slot * cells + cell`, which is what
+    // the 0.2 line did with categories. An array index beats a hash probe by
+    // about 2x and existing single-category indexes must not pay for a capability
+    // they never asked for, so that layout stays the default wherever it fits.
+    //
+    // A large one is stored SPARSELY, keyed by (slot, cell) in `agg`, with the
+    // payload in parallel arrays and every entry also on its node's doubly-linked
+    // list so a subtree's cells can be enumerated when it re-homes. This is the
+    // only layout a conjunction fits in: dense charges 20 B per device per cell
+    // whether or not the cell occurs, so a cross product of three dimensions runs
+    // to terabytes, while sparse holds at most one entry per device per shape per
+    // level -- 1.5M entries on a 200k fleet, and flat as dimensions are added.
+    //
+    // `_find(s, cell)` returns an index into acnt/asx/asy either way, so every
+    // reader below is written once.
+    this.denseCells = options.denseCells ?? 32;
+    this.dense = this.schema.enabled && this.schema.cellCount <= this.denseCells;
+    this._C = this.schema.cellCount;
+    if (this.schema.enabled && !this.dense) {
+      this.agg = new CellHash(1024);
+      this._aCap = 1024; this._aN = 0; this._aFree = NONE;
+      this.acnt = new Int32Array(this._aCap);
+      this.asx = new Float64Array(this._aCap);
+      this.asy = new Float64Array(this._aCap);
+      this.aCell = new Int32Array(this._aCap);
+      this.aNext = new Int32Array(this._aCap);
+      this.aPrev = new Int32Array(this._aCap);
+    }
+    if (this.schema.enabled) {
+      // Recomputing a device's cells on every operation would let a caller mutate
+      // the props object we stored by reference and silently desynchronise the
+      // table, so each device's cells are held here at a fixed stride.
+      this._mc = this.schema.maxCellsPerDevice;
+      this._cellBuf = new Int32Array(this._mc);
+    }
+
     this._cap = 0;
     this._n = 0;
     this._freeHead = NONE;
@@ -137,12 +180,18 @@ export class NetCluster {
     const ext = new Float64Array(cap); if (this.ext) ext.set(this.ext);
     this.ext = ext;                                    // external id
     this.data = this.data || [];                       // user properties
-    const K = this.categories;
-    if (K > 0) {                                       // slot-major: slot*K + k
-      this.cat = I(this.cat);
-      const cc = new Int32Array(cap * K);   if (this.ccnt) cc.set(this.ccnt);  this.ccnt = cc;
-      const cx = new Float64Array(cap * K); if (this.csx)  cx.set(this.csx);   this.csx  = cx;
-      const cy = new Float64Array(cap * K); if (this.csy)  cy.set(this.csy);   this.csy  = cy;
+    if (this.schema.enabled) {
+      const dc = new Int32Array(cap * this._mc); if (this.dcell) dc.set(this.dcell); this.dcell = dc;
+      this.dcellN = I(this.dcellN);                    // how many cells this device has
+      if (this.dense) {                                // slot-major: slot*C + cell
+        const C = this.schema.cellCount;
+        const cc = new Int32Array(cap * C);   if (this.acnt) cc.set(this.acnt); this.acnt = cc;
+        const cx = new Float64Array(cap * C); if (this.asx)  cx.set(this.asx);  this.asx  = cx;
+        const cy = new Float64Array(cap * C); if (this.asy)  cy.set(this.asy);  this.asy  = cy;
+      } else {
+        this.cellHead = I(this.cellHead);              // head of this node's entry list
+        for (let i = old; i < cap; i++) this.cellHead[i] = NONE;
+      }
     }
     for (let i = old; i < cap; i++) { this.par[i] = NONE; this.tz[i] = -2; }
   }
@@ -155,28 +204,28 @@ export class NetCluster {
       s = this._n++;
     }
     this.kid[s] = NONE; this.sib[s] = NONE; this.psib[s] = NONE; this.par[s] = NONE;
-    const K = this.categories;
-    if (K > 0) {                                       // a reused slot must not
-      const b = s * K;                                 // inherit stale slices
-      for (let k = 0; k < K; k++) { this.ccnt[b + k] = 0; this.csx[b + k] = 0; this.csy[b + k] = 0; }
-    }
+    // a reused slot cannot inherit stale aggregates: _free cleared them, and
+    // _selfMass clears again before writing this device's own mass
     return s;
   }
 
-  /** reset `s` to carry only its own point, in the total and in its slice */
+  /** reset `s` to carry only its own point, in the total and in its own cells */
   _selfMass(s) {
     const x = this.qx[s], y = this.qy[s];
     this.cnt[s] = 1; this.sx[s] = x; this.sy[s] = y;
-    const K = this.categories;
-    if (K > 0) {
-      const b = s * K;
-      for (let k = 0; k < K; k++) { this.ccnt[b + k] = 0; this.csx[b + k] = 0; this.csy[b + k] = 0; }
-      const c = this.cat[s];
-      this.ccnt[b + c] = 1; this.csx[b + c] = x; this.csy[b + c] = y;
+    if (!this.schema.enabled) return;
+    this._dropCells(s);
+    const base = s * this._mc, n = this.dcellN[s];
+    for (let i = 0; i < n; i++) {
+      const e = this._entry(s, this.dcell[base + i]);
+      this.acnt[e] = 1; this.asx[e] = x; this.asy[e] = y;
     }
   }
 
   _free(s) {
+    // _unlink left `s` holding its own mass; without this the table keeps a row
+    // per removed device forever.
+    if (this.schema.enabled) { this._dropCells(s); this.dcellN[s] = 0; }
     this.par[s] = this._freeHead; this._freeHead = s; this.tz[s] = -2;
     this.data[s] = undefined;
     // or the slot's next tenant inherits this one's id
@@ -348,51 +397,195 @@ export class NetCluster {
   }
 
   // ------------------------------------------------------------ aggregates --
-  /**
-   * Add the mass of ONE point to `s` and every ancestor. This is the hot path:
-   * a point belongs to a single category, so it touches a single slice and the
-   * work is independent of how many categories exist.
-   */
-  _agg(s, dc, dx, dy, k) {
-    const { par, cnt, sx, sy } = this;
-    const K = this.categories;
-    if (K > 0 && k !== undefined) {
-      const { ccnt, csx, csy } = this;
-      while (s !== NONE) {
-        cnt[s] += dc; sx[s] += dx; sy[s] += dy;
-        const b = s * K + k;
-        ccnt[b] += dc; csx[b] += dx; csy[b] += dy;
-        s = par[s];
-      }
-      return;
-    }
-    while (s !== NONE) { cnt[s] += dc; sx[s] += dx; sy[s] += dy; s = par[s]; }
+  // The table is keyed on (slot, cell). Slots are below 2^29 and cells below
+  // 2^24, so the key stays an exact float64 integer and CellHash needs no
+  // BigInt -- the same packing trick the grid keys use.
+  _aggKey(s, cell) { return s * CELL_SPAN + cell; }
+
+  _growAgg() {
+    const cap = this._aCap * 2;
+    const I = (a) => { const n = new Int32Array(cap); n.set(a); return n; };
+    const F = (a) => { const n = new Float64Array(cap); n.set(a); return n; };
+    this.acnt = I(this.acnt); this.asx = F(this.asx); this.asy = F(this.asy);
+    this.aCell = I(this.aCell); this.aNext = I(this.aNext); this.aPrev = I(this.aPrev);
+    this._aCap = cap;
   }
 
   /**
-   * Move a whole subtree's mass (all K slices) on or off an ancestor chain.
-   * Only re-homing does this, ~3.3 times per removal, so the K factor lands on
-   * the cold path.
+   * The hash of `_aggKey(s, cell)`, computed without splitting a float.
+   *
+   * key = s * 2^24 + cell, so the low half is ((s & 0xFF) << 24) | cell and the
+   * high half is s >>> 8 -- exactly what `CellHash.hash` would have derived, but
+   * in integer ops. The float modulo it replaces was a real cost on a path taken
+   * once per cell per level.
+   */
+  _aggHash(s, cell) { return CellHash.mix(((s & 0xFF) << 24) | cell, s >>> 8); }
+
+  /** the (s, cell) entry, or -1 when the sparse table has none */
+  _find(s, cell) {
+    if (this.dense) return s * this._C + cell;
+    return this.agg.getH(s * CELL_SPAN + cell, this._aggHash(s, cell));
+  }
+
+  /** the (s, cell) entry, created empty and linked onto s's list if absent */
+  _entry(s, cell) {
+    if (this.dense) return s * this._C + cell;
+    const key = s * CELL_SPAN + cell;
+    const found = this.agg.getH(key, this._aggHash(s, cell));
+    if (found !== -1) return found;
+    let e;
+    if (this._aFree !== NONE) { e = this._aFree; this._aFree = this.aNext[e]; }
+    else { if (this._aN === this._aCap) this._growAgg(); e = this._aN++; }
+    this.acnt[e] = 0; this.asx[e] = 0; this.asy[e] = 0; this.aCell[e] = cell;
+    const head = this.cellHead[s];
+    this.aNext[e] = head; this.aPrev[e] = NONE;
+    if (head !== NONE) this.aPrev[head] = e;
+    this.cellHead[s] = e;
+    this.agg.set(key, e);
+    return e;
+  }
+
+  /**
+   * Release one entry. Entries are freed the moment their count reaches zero
+   * rather than left at zero, or an index that churns for months accumulates a
+   * row per cell a node ever held -- which is the whole cell space, eventually.
+   */
+  _release(s, e) {
+    const p = this.aPrev[e], n = this.aNext[e];
+    if (p === NONE) this.cellHead[s] = n; else this.aNext[p] = n;
+    if (n !== NONE) this.aPrev[n] = p;
+    this.agg.delete(this._aggKey(s, this.aCell[e]));
+    this.aNext[e] = this._aFree; this._aFree = e;
+  }
+
+  _dropCells(s) {
+    if (this.dense) {
+      const C = this._C, b = s * C;
+      for (let k = 0; k < C; k++) { this.acnt[b + k] = 0; this.asx[b + k] = 0; this.asy[b + k] = 0; }
+      return;
+    }
+    let e = this.cellHead[s];
+    while (e !== NONE) {
+      const nx = this.aNext[e];
+      this.agg.delete(this._aggKey(s, this.aCell[e]));
+      this.aNext[e] = this._aFree; this._aFree = e;
+      e = nx;
+    }
+    this.cellHead[s] = NONE;
+  }
+
+  /** add (dc, dx, dy) to one cell of one node, creating or freeing as needed */
+  _bump(s, cell, dc, dx, dy) {
+    if (this.dense) {
+      const i = s * this._C + cell;
+      this.acnt[i] += dc; this.asx[i] += dx; this.asy[i] += dy;
+      return;
+    }
+    const e = this._entry(s, cell);
+    const c = (this.acnt[e] += dc);
+    this.asx[e] += dx; this.asy[e] += dy;
+    if (c === 0) this._release(s, e);
+  }
+
+  /**
+   * Add the mass of ONE device to `from` and every ancestor.
+   *
+   * This is the hot path. A device touches one cell per declared shape per
+   * level, so the work is independent of how many combinations exist -- but it
+   * is a hash probe per cell per level rather than an array write, which is what
+   * buys conjunctions.
+   */
+  _agg(from, dc, dx, dy, dev) {
+    const { par, cnt, sx, sy } = this;
+    if (!this.schema.enabled || dev === undefined) {
+      while (from !== NONE) { cnt[from] += dc; sx[from] += dx; sy[from] += dy; from = par[from]; }
+      return;
+    }
+    const base = dev * this._mc, n = this.dcellN[dev], dcell = this.dcell;
+    if (this.dense) {
+      const { acnt, asx, asy } = this, C = this._C;
+      while (from !== NONE) {
+        cnt[from] += dc; sx[from] += dx; sy[from] += dy;
+        const tb = from * C;
+        for (let i = 0; i < n; i++) {
+          const j = tb + dcell[base + i];
+          acnt[j] += dc; asx[j] += dx; asy[j] += dy;
+        }
+        from = par[from];
+      }
+      return;
+    }
+    while (from !== NONE) {
+      cnt[from] += dc; sx[from] += dx; sy[from] += dy;
+      for (let i = 0; i < n; i++) this._bump(from, dcell[base + i], dc, dx, dy);
+      from = par[from];
+    }
+  }
+
+  /**
+   * Move a whole subtree's mass on or off an ancestor chain. Only re-homing does
+   * this, ~3.3 times per removal, so it stays a cold path -- and it now costs
+   * the cells that subtree actually holds (at most its point count) rather than
+   * every declared combination.
    */
   _aggSub(target, node, sign) {
     const { par, cnt, sx, sy } = this;
-    const K = this.categories;
     const dc = sign * cnt[node], dx = sign * sx[node], dy = sign * sy[node];
-    if (K === 0) {
+    if (!this.schema.enabled) {
       while (target !== NONE) { cnt[target] += dc; sx[target] += dx; sy[target] += dy; target = par[target]; }
       return;
     }
-    const { ccnt, csx, csy } = this;
-    const nb = node * K;
+    if (this.dense) {
+      // Skipping empty cells is what keeps this from being the K-shaped cost the
+      // dense layout used to pay unconditionally: a subtree holds at most as many
+      // cells as it has points.
+      const { acnt, asx, asy } = this;
+      const C = this._C, nb = node * C;
+      while (target !== NONE) {
+        cnt[target] += dc; sx[target] += dx; sy[target] += dy;
+        const tb = target * C;
+        for (let k = 0; k < C; k++) {
+          const n = acnt[nb + k];
+          if (n === 0) continue;
+          acnt[tb + k] += sign * n; asx[tb + k] += sign * asx[nb + k]; asy[tb + k] += sign * asy[nb + k];
+        }
+        target = par[target];
+      }
+      return;
+    }
     while (target !== NONE) {
       cnt[target] += dc; sx[target] += dx; sy[target] += dy;
-      const tb = target * K;
-      for (let k = 0; k < K; k++) {
-        ccnt[tb + k] += sign * ccnt[nb + k];
-        csx[tb + k] += sign * csx[nb + k];
-        csy[tb + k] += sign * csy[nb + k];
+      for (let e = this.cellHead[node]; e !== NONE; e = this.aNext[e]) {
+        this._bump(target, this.aCell[e], sign * this.acnt[e], sign * this.asx[e], sign * this.asy[e]);
       }
       target = par[target];
+    }
+  }
+
+  /** Read a device's cells out of `props` into its fixed-stride row. */
+  _setCells(s, props, label) {
+    const buf = this._cellBuf;
+    const n = this.schema.cellsFor(props, buf, label);
+    const base = s * this._mc;
+    for (let i = 0; i < n; i++) this.dcell[base + i] = buf[i];
+    this.dcellN[s] = n;
+  }
+
+  /**
+   * Re-file a device that is still where it was: take its own mass out of its
+   * old cells along the whole ancestor chain, adopt the new ones, put it back.
+   * Totals are untouched, because nothing about the point moved.
+   */
+  _recell(s, buf, n) {
+    const base = s * this._mc, old = this.dcellN[s];
+    const x = this.qx[s], y = this.qy[s];
+    for (let t = s; t !== NONE; t = this.par[t]) {
+      for (let i = 0; i < old; i++) this._bump(t, this.dcell[base + i], -1, -x, -y);
+    }
+    for (let i = 0; i < n; i++) this.dcell[base + i] = buf[i];
+    this.dcellN[s] = n;
+    for (let t = s; t !== NONE; t = this.par[t]) {
+      for (let i = 0; i < n; i++) this._bump(t, this.dcell[base + i], 1, x, y);
     }
   }
 
@@ -441,12 +634,9 @@ export class NetCluster {
     const s = this._alloc();
     const [x, y] = project(lng, lat);
     this.qx[s] = x; this.qy[s] = y;
-    if (this.categories > 0) {
-      const c = props ? (props[this.categoryField] | 0) : 0;
-      if (c < 0 || c >= this.categories) {
-        throw new Error(`netcluster: ${this.categoryField}=${c} outside [0, ${this.categories})`);
-      }
-      this.cat[s] = c;
+    if (this.schema.enabled) {
+      this.dcellN[s] = 0;                // a reused slot must not inherit cells
+      this._setCells(s, props, `device ${JSON.stringify(id)}`);
     }
     this._selfMass(s);
     this.ext[s] = id;                    // NaN for a non-numeric id; see _extId
@@ -491,7 +681,7 @@ export class NetCluster {
     this._gridDel(s);                                    // must vanish before re-homing
     const up = par[s];
     // 1. this point's own mass leaves the ancestor chain
-    this._agg(up, -1, -qx[s], -qy[s], this.categories > 0 ? this.cat[s] : undefined);
+    this._agg(up, -1, -qx[s], -qy[s], s);
     // 2. every child subtree is re-homed elsewhere
     let c = kid[s], k = 0;
     while (c !== NONE) { if (k === this._kids.length) this._kids = grow32(this._kids); this._kids[k++] = c; c = sib[c]; }
@@ -539,6 +729,19 @@ export class NetCluster {
     if (props !== undefined) this.data[s] = props;
     const [x, y] = project(lng, lat);
     const ox = this.qx[s], oy = this.qy[s];
+    // A value change is not a move, and must be applied before the unchanged-
+    // position shortcut below: a parked vehicle whose status changes has to
+    // leave one filter and join another, and it never moves while it does it.
+    if (this.schema.enabled && props !== undefined) {
+      const buf = this._cellBuf;
+      const n = this.schema.cellsFor(props, buf, `device ${JSON.stringify(id)}`);
+      const base = s * this._mc;
+      let changed = n !== this.dcellN[s];
+      if (!changed) {
+        for (let i = 0; i < n; i++) if (this.dcell[base + i] !== buf[i]) { changed = true; break; }
+      }
+      if (changed) this._recell(s, buf, n);
+    }
     if (x === ox && y === oy) return s;
     this.stats.moves++;
 
@@ -568,7 +771,7 @@ export class NetCluster {
 
     if (ok) {
       this._gridMove(s, x, y);
-      this._agg(s, 0, x - ox, y - oy, this.categories > 0 ? this.cat[s] : undefined);
+      this._agg(s, 0, x - ox, y - oy, s);
       this.stats.movesFast++;
       return s;
     }
@@ -687,16 +890,30 @@ export class NetCluster {
    * With `cat >= 0` the same subtraction runs over that category's slice, so a
    * filtered cluster costs exactly what an unfiltered one costs.
    */
-  _clusterAt(s, z, out, cat) {
-    const K = this.categories;
-    if (K > 0 && cat >= 0) {
-      const { ccnt, csx, csy } = this;
-      let i = s * K + cat;
-      let c = ccnt[i], ax = csx[i], ay = csy[i];
+  _clusterAt(s, z, out, cat, known) {
+    if (this.schema.enabled && cat >= 0) {
+      const { acnt, asx, asy } = this;
+      // The dense index is arithmetic, so it is spelled out here rather than
+      // going through _find: this runs once per child of every visited node.
+      if (this.dense) {
+        const C = this._C;
+        let i = s * C + cat;
+        let c = acnt[i], ax = asx[i], ay = asy[i];
+        for (let b = this.kid[s]; b !== NONE; b = this.sib[b]) {
+          if (this.tz[b] > z) break;
+          i = b * C + cat;
+          c -= acnt[i]; ax -= asx[i]; ay -= asy[i];
+        }
+        out[0] = c; out[1] = ax; out[2] = ay;
+        return out;
+      }
+      let e = known === undefined ? this._find(s, cat) : known;
+      let c = 0, ax = 0, ay = 0;
+      if (e !== NONE) { c = acnt[e]; ax = asx[e]; ay = asy[e]; }
       for (let b = this.kid[s]; b !== NONE; b = this.sib[b]) {
         if (this.tz[b] > z) break;
-        i = b * K + cat;
-        c -= ccnt[i]; ax -= csx[i]; ay -= csy[i];
+        e = this._find(b, cat);
+        if (e !== NONE) { c -= acnt[e]; ax -= asx[e]; ay -= asy[e]; }
       }
       out[0] = c; out[1] = ax; out[2] = ay;
       return out;
@@ -710,9 +927,16 @@ export class NetCluster {
     return out;
   }
 
-  /** the one member of category `cat` in cluster (`s`, `z`) -- see getClusters */
+  /** is the device at `s` itself in cell `cell`? */
+  _inCell(s, cell) {
+    const base = s * this._mc, n = this.dcellN[s];
+    for (let i = 0; i < n; i++) if (this.dcell[base + i] === cell) return true;
+    return false;
+  }
+
+  /** the one member of cell `cat` in cluster (`s`, `z`) -- see getClusters */
   _findSingle(s, z, cat) {
-    if (this.cat[s] === cat) return s;
+    if (this._inCell(s, cat)) return s;
     for (let b = this.kid[s]; b !== NONE; b = this.sib[b]) {
       if (this.tz[b] <= z) continue;             // already split off at this zoom
       if (this._subtreeCount(b, cat) > 0) return this._findSingleIn(b, cat);
@@ -722,16 +946,18 @@ export class NetCluster {
 
   /** same, once the whole subtree is known to be inside the cluster */
   _findSingleIn(s, cat) {
-    if (this.cat[s] === cat) return s;
+    if (this._inCell(s, cat)) return s;
     for (let b = this.kid[s]; b !== NONE; b = this.sib[b]) {
       if (this._subtreeCount(b, cat) > 0) return this._findSingleIn(b, cat);
     }
     return s;
   }
 
-  /** how many points of `cat` sit anywhere under `s` */
+  /** how many points of cell `cat` sit anywhere under `s` */
   _subtreeCount(s, cat) {
-    return this.categories > 0 && cat >= 0 ? this.ccnt[s * this.categories + cat] : this.cnt[s];
+    if (!(this.schema.enabled && cat >= 0)) return this.cnt[s];
+    const e = this._find(s, cat);
+    return e === NONE ? 0 : this.acnt[e];
   }
 
   /**
@@ -745,7 +971,8 @@ export class NetCluster {
    */
   getClusters(bbox, zoom, category = -1) {
     const z = Math.max(this.minZoom, Math.min(this.maxZoom, Math.floor(zoom)));
-    const cat = this.categories > 0 ? category : -1;
+    const cat = this.schema.enabled ? this.schema.queryCell(category) : -1;
+    const dense = this.dense;
     let [x0, y0] = project(bbox[0], bbox[3]);
     let [x1, y1] = project(bbox[2], bbox[1]);
     if (x1 < x0) { const t = x0; x0 = x1; x1 = t; }
@@ -768,12 +995,18 @@ export class NetCluster {
     }
     while (stack.length) {
       const s = stack.pop();
-      // a subtree holding none of the requested category cannot contribute
-      if (cat >= 0 && this._subtreeCount(s, cat) === 0) continue;
+      // a subtree holding none of the requested cell cannot contribute. The
+      // entry found here is the one _clusterAt would look up again, so it is
+      // passed down rather than probed twice per visited node.
+      let se = NONE;
+      if (cat >= 0) {
+        se = dense ? s * this._C + cat : this._find(s, cat);
+        if (se === NONE || this.acnt[se] === 0) continue;
+      }
       const pad = 2 * this.r[this.tz[s]];
       const px = this.qx[s], py = this.qy[s];
       if (px < x0 - pad || px > x1 + pad || py < y0 - pad || py > y1 + pad) continue;
-      this._clusterAt(s, z, agg, cat);
+      this._clusterAt(s, z, agg, cat, se);
       if (agg[0] > 0) {                     // filtered clusters can be empty
         const mx = agg[1] / agg[0], my = agg[2] / agg[0];
         if (mx >= x0 && mx <= x1 && my >= y0 && my <= y1) {
@@ -916,8 +1149,32 @@ export class NetCluster {
   }
 
   memoryBytes() {
+    let filter = 0;
+    if (this.schema.enabled) {
+      filter = this._cap * (4 + 4 * this._mc);          // each device's cell row
+      filter += this.dense
+        // 20 B per slot per cell, occupied or not -- that product is exactly why
+        // a large cell space goes sparse instead
+        ? this._cap * this.schema.cellCount * (4 + 8 + 8)
+        // 28 B of payload per entry, plus the directory that finds it
+        : this._aCap * (4 + 8 + 8 + 4 + 4 + 4) + this.agg.bytes();
+    }
     return this._cap * (2 * 8 + 7 * 4) + this._eCap * 8 + this.grid.bytes() + this.ids.size * 40 +
-           (this.extStr === null ? 0 : this.extStr.length * 8);
+           (this.extStr === null ? 0 : this.extStr.length * 8) + filter;
+  }
+
+  /** live aggregate entries -- what the filter actually costs, see memoryBytes */
+  aggEntries() {
+    if (!this.schema.enabled) return 0;
+    if (this.dense) {
+      let n = 0;
+      const C = this.schema.cellCount;
+      for (const s of this.ids.values()) for (let k = 0; k < C; k++) if (this.acnt[s * C + k] !== 0) n++;
+      return n;
+    }
+    let free = 0;
+    for (let e = this._aFree; e !== NONE; e = this.aNext[e]) free++;
+    return this._aN - free;
   }
 
   /** sum_z |C_z| : how many (center, level) pairs the grid holds */

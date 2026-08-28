@@ -164,17 +164,37 @@ Reproduce with `npm run bench`.
 
 ## Filtering by a property
 
-Declare the categories up front and every node carries per-category aggregates. A point belongs to one category, so **update cost stays flat in K**:
+Declare the properties you filter on and which combinations a query may name. Every node then carries a running total per combination, so a filtered query reads a precomputed number instead of walking the subtree:
+
+```js
+const index = new NetCluster({
+  dimensions: {
+    client: { values: 40, multi: true },       // a vehicle may have several owners
+    status: ['idle', 'enroute', 'loading'],
+  },
+  filters: [['client'], ['status'], ['client', 'status']],
+});
+
+index.insert('v1', lng, lat, { client: [1, 7, 22], status: 'enroute' });
+
+index.getClusters(bbox, zoom, { client: 7 });                     // exact
+index.getClusters(bbox, zoom, { client: 7, status: 'enroute' });  // exact
+index.getClusters(bbox, zoom);                                    // everything
+```
+
+Filters **combine** (`client 7 AND enroute`), a device may hold **several values** for one dimension, and reporting it again with different values **re-files it** — even when it has not moved, which is exactly what a status change looks like. Counts and centroids are exact throughout.
+
+The single-category spelling still works and costs what it always did:
 
 ```js
 const index = new NetCluster({ categories: 5 });
 index.insert('v1', lng, lat, { category: 3 });
-
-index.getClusters(bbox, zoom, 3);   // only category 3 — counts and centroids exact
-index.getClusters(bbox, zoom);      // everything
+index.getClusters(bbox, zoom, 3);
 ```
 
-Costs 20 bytes per point per category. Counts and centroids are exact; you get 0–7% more markers than an index built only from the matching points, because the tree was shaped by all of them. Details and the trade-off in [`docs/FILTERING.md`](docs/FILTERING.md).
+At 200k points a filtered query is 0.04–0.08 ms — faster than an unfiltered one, since a subtree holding none of the requested value is pruned outright. You pay on writes and in memory: each declared shape is a separate aggregate, so three shapes cost about three times one. Sizing, layouts and the 0–7% extra markers you get from filtering a shared tree are in [`docs/FILTERING.md`](docs/FILTERING.md).
+
+What it still cannot do: substring search, ranges, `OR` across values, or anything read out of `properties`. Those and [why pulling every point out and filtering yourself loses points](docs/FILTERING.md#do-not-enumerate-the-index) are covered there too.
 
 ## GeoJSON
 
@@ -247,11 +267,15 @@ Reproduce with `node --expose-gc bench/geojson.js`.
 |---|---|---|
 | `radius` | `40` | cluster radius in screen pixels |
 | `extent` | `512` | tile extent those pixels are measured against |
-| `maxZoom` | `16` | finest level maintained; beyond it every point stands alone |
+| `maxZoom` | `16` | finest level maintained; queries clamp to it, so points closer than the radius there (~44 m at the defaults) always return as a cluster |
 | `minZoom` | `0` | coarsest zoom a query may ask for |
 | `hysteresis` | `0.25` | how far an assignment stretches before a point is re-homed |
-| `categories` | `0` | number of filter categories (0 = off) |
+| `categories` | `0` | number of filter categories (0 = off); shorthand for a single `dimensions` entry |
 | `categoryField` | `'category'` | which property holds the category index |
+| `dimensions` | — | properties you can filter on, each with its values; `{ multi: true }` lets a device hold several |
+| `filters` | one per dimension | which combinations of dimensions a query may name — this is what filtering costs |
+| `maxCellsPerDevice` | shapes (×8 if any `multi`) | cap on how many combinations one device may occupy |
+| `denseCells` | `32` | cell count at or below which aggregates use the faster dense layout |
 | `idField` | `'id'` | which property holds the id, when a GeoJSON Feature has no `id` of its own |
 
 The same options configure the Redis backend, which additionally takes `prefix`

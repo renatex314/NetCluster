@@ -87,3 +87,51 @@ console.log(`\nafter load(): ${index.size} vehicles, van-1 registered = ${index.
 // what map.getSource(id).setData() and L.geoJSON() want.
 const fc = index.getFeatureCollection(bbox, 11);
 console.log(`getFeatureCollection: ${fc.type} of ${fc.features.length} features`);
+
+// --- filtering on more than one property ---------------------------------------
+// The map needs "show me client 7's vehicles that are en route". That is two
+// filters at once, and a vehicle can belong to several clients, so neither fits a
+// single category. Declare the properties and the combinations you will ask for.
+const fleet = new NetCluster({
+  radius: 40,
+  maxZoom: 16,
+  dimensions: {
+    // `multi` because one vehicle can be operated for several clients
+    client: { values: 40, multi: true },
+    status: ['idle', 'enroute', 'loading'],
+  },
+  // The combinations a query may name. Each one is stored separately, so this
+  // list is what filtering costs -- declare the ones your UI actually offers.
+  filters: [['client'], ['status'], ['client', 'status']],
+});
+
+fleet.insert('truck-1', -46.6333, -23.5505, { client: [7, 22], status: 'enroute' });
+fleet.insert('truck-2', -46.6340, -23.5510, { client: [7], status: 'idle' });
+fleet.insert('truck-3', -46.6350, -23.5520, { client: [3], status: 'enroute' });
+
+const total = (fs) => fs.reduce((a, f) => a + (f.properties.point_count ?? 1), 0);
+const world = [-180, -85, 180, 85];
+console.log('\nfiltering:');
+console.log(`  everything            ${total(fleet.getClusters(world, 16))}`);
+console.log(`  client 7              ${total(fleet.getClusters(world, 16, { client: 7 }))}`);
+console.log(`  en route              ${total(fleet.getClusters(world, 16, { status: 'enroute' }))}`);
+console.log(`  client 7 AND en route ${total(fleet.getClusters(world, 16, { client: 7, status: 'enroute' }))}`);
+
+// A status change does not move the vehicle, so report it at the same position
+// with the new value and the index re-files it.
+fleet.moveTo('truck-2', -46.6340, -23.5510, { client: [7], status: 'enroute' });
+console.log(`  after truck-2 departs ${total(fleet.getClusters(world, 16, { client: 7, status: 'enroute' }))}`);
+
+// A bare position report keeps the values it already had -- positions arrive far
+// more often than values change, and re-sending them every time would be wasteful
+// and easy to get wrong.
+fleet.moveTo('truck-2', -46.6341, -23.5511);
+console.log(`  after it moves again  ${total(fleet.getClusters(world, 16, { client: 7, status: 'enroute' }))}`);
+
+// Asking for a combination you did not declare is an error, never an empty map:
+// a filter that silently matches nothing looks exactly like a quiet fleet.
+try {
+  fleet.getClusters(world, 16, { plate: 'ABC1234' });
+} catch (e) {
+  console.log(`  undeclared filter     ${e.message.slice(0, 60)}...`);
+}

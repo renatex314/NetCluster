@@ -27,16 +27,73 @@ export interface NetClusterOptions {
   /**
    * Number of filter categories, enabling `getClusters(bbox, zoom, category)`.
    * Costs 20 bytes per point per category. Default 0 (disabled).
+   *
+   * Equivalent to a single dimension; use `dimensions` for anything more.
+   * Passing both is an error.
    */
   categories?: number;
   /** Property name holding the category on inserted points. Default 'category'. */
   categoryField?: string;
+  /**
+   * Properties you can filter on, each with its possible values — either a count
+   * (values are `0 .. n-1`) or a list of labels.
+   *
+   * `{ multi: true }` lets one device hold several values for that dimension,
+   * which a single category cannot express. Values are read from the properties
+   * passed to `insert` / `moveTo` under the dimension's own name; a missing value
+   * means index 0.
+   *
+   * ```ts
+   * new NetCluster({
+   *   dimensions: { client: { values: 40, multi: true }, status: ['idle', 'enroute'] },
+   *   filters: [['client'], ['status'], ['client', 'status']],
+   * });
+   * ```
+   */
+  dimensions?: Record<string, number | readonly string[] | {
+    values: number | readonly string[];
+    multi?: boolean;
+  }>;
+  /**
+   * Which combinations of dimensions a query may name. Defaults to each
+   * dimension on its own.
+   *
+   * Every shape is stored separately, so this is what filtering costs: a device
+   * contributes one aggregate entry per shape per tree level. A query must match
+   * a declared shape exactly, or it throws — a filter never silently degrades
+   * into a scan.
+   */
+  filters?: ReadonlyArray<readonly string[]>;
+  /**
+   * Largest number of cells one device may occupy. Defaults to the number of
+   * shapes, times 8 when any dimension is `multi`. A device past the cap is
+   * rejected by name rather than quietly costing many times its neighbours.
+   */
+  maxCellsPerDevice?: number;
+  /**
+   * Cell count at or below which aggregates are stored densely — an array index
+   * per (node, cell) rather than a hash probe. Default 32.
+   *
+   * Dense is faster; it costs 20 bytes per device per cell whether or not the
+   * cell occurs, which is why a large cell space goes sparse instead. Set to 0 to
+   * force the sparse table. Filtering results are identical either way.
+   */
+  denseCells?: number;
   /**
    * Where `insertFeature` / `load` look for the id when a GeoJSON Feature has no
    * `id` of its own. Default 'id'.
    */
   idField?: string;
 }
+
+/**
+ * What a filtered query selects: a category index (the `categories` spelling), or
+ * one value per dimension of a declared filter shape.
+ *
+ * A device may hold several values for a `multi` dimension, but a query names one
+ * of them — "client 7" is a question with an answer, "client 7 or 9" is two.
+ */
+export type FilterSelector = number | Record<string, string | number>;
 
 export interface ClusterProperties {
   cluster: true;
@@ -140,6 +197,8 @@ export declare class NetCluster<P = Record<string, unknown>> {
   readonly extent: number;
   readonly hysteresis: number;
   readonly categories: number;
+  /** True when aggregates use the dense layout; see `denseCells`. */
+  readonly dense: boolean;
   /** Number of live points. */
   readonly size: number;
   readonly stats: NetClusterStats;
@@ -181,15 +240,17 @@ export declare class NetCluster<P = Record<string, unknown>> {
 
   /**
    * Clusters whose marker falls inside `bbox` at `zoom`.
-   * @param category with `categories` enabled, restrict to one category.
+   * @param filter with `categories` enabled, a category index; with `dimensions`,
+   *   an object naming exactly the dimensions of one declared filter shape, e.g.
+   *   `{ client: 7, status: 'enroute' }`. Omit for everything.
    */
-  getClusters(bbox: BBox, zoom: number, category?: number): Array<NetClusterFeature<P>>;
+  getClusters(bbox: BBox, zoom: number, filter?: FilterSelector): Array<NetClusterFeature<P>>;
 
   /**
    * The same features `getClusters` returns, wrapped as a FeatureCollection --
    * the shape `setData()` and `L.geoJSON()` want.
    */
-  getFeatureCollection(bbox: BBox, zoom: number, category?: number): NetClusterFeatureCollection<P>;
+  getFeatureCollection(bbox: BBox, zoom: number, filter?: FilterSelector): NetClusterFeatureCollection<P>;
 
   /**
    * Every live point as a FeatureCollection, unclustered, in insertion order.
@@ -217,6 +278,12 @@ export declare class NetCluster<P = Record<string, unknown>> {
 
   /** Approximate heap footprint in bytes. */
   memoryBytes(): number;
+
+  /**
+   * Live aggregate entries — what the filter is actually costing, as opposed to
+   * what it could cost. Zero when no dimensions are declared.
+   */
+  aggEntries(): number;
 
   /** Total (centre, level) listings held by the grid. */
   gridEntries(): number;

@@ -111,3 +111,30 @@ declare const redisLike: RedisLike;
 const rIndex = new RedisNetCluster(redisLike, { idField: 'plate' });
 const rLoaded: Promise<number> = rIndex.load(fc);
 void rLoaded;
+
+// --- filtering on several properties ----------------------------------------
+interface Truck extends Record<string, unknown> {
+  client: number[];
+  status: 'idle' | 'enroute';
+  plate: string;
+}
+const multi = new NetCluster<Truck>({
+  dimensions: {
+    client: { values: 40, multi: true },
+    status: ['idle', 'enroute'],
+    kind: 3,                                   // a bare count is also a dimension
+  },
+  filters: [['client'], ['status'], ['client', 'status']],
+  maxCellsPerDevice: 24,
+  denseCells: 32,
+});
+multi.insert('t-1', -46.63, -23.55, { client: [1, 7], status: 'enroute', plate: 'ABC1234' });
+multi.moveTo('t-1', -46.63, -23.55, { client: [1, 7], status: 'idle', plate: 'ABC1234' });
+
+const byClient: Array<NetClusterFeature<Truck>> = multi.getClusters(bbox, 11, { client: 7 });
+const both: Array<NetClusterFeature<Truck>> = multi.getClusters(bbox, 11, { client: 7, status: 'enroute' });
+const everything: Array<NetClusterFeature<Truck>> = multi.getClusters(bbox, 11);
+const fcFiltered: NetClusterFeatureCollection<Truck> = multi.getFeatureCollection(bbox, 11, { client: 7 });
+const entries: number = multi.aggEntries();
+const isDense: boolean = multi.dense;
+void byClient; void both; void everything; void fcFiltered; void entries; void isDense;

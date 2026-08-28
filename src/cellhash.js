@@ -30,10 +30,16 @@ export class CellHash {
     this.limit = (cap * 0.6) | 0;
   }
 
-  static hash(key) {
-    // split the <=53-bit integer into two 32-bit halves and mix (murmur-ish)
-    const lo = key % 4294967296;
-    const hi = (key - lo) / 4294967296;
+  /**
+   * Mix two 32-bit halves (murmur-ish).
+   *
+   * Split out so a caller that already holds the halves can skip `hash`'s float
+   * modulo -- see NetCluster._aggHash, where the key is built from a slot and a
+   * cell whose halves are known by construction. Any such caller must produce
+   * exactly what `hash(key)` would, or `_grow` (which rehashes from the stored
+   * key) would scatter entries where lookups will not find them.
+   */
+  static mix(lo, hi) {
     let h = (Math.imul(lo | 0, 0x9e3779b1) ^ Math.imul(hi | 0, 0x85ebca6b)) >>> 0;
     h ^= h >>> 15;
     h = Math.imul(h, 0x2545f491) >>> 0;
@@ -41,10 +47,28 @@ export class CellHash {
     return h >>> 0;
   }
 
+  static hash(key) {
+    // split the <=53-bit integer into two 32-bit halves
+    const lo = key % 4294967296;
+    return CellHash.mix(lo, (key - lo) / 4294967296);
+  }
+
   /** @returns value, or -1 when absent */
   get(key) {
     const { keys, mask } = this;
     let i = CellHash.hash(key) & mask;
+    for (;;) {
+      const k = keys[i];
+      if (k === key) return this.vals[i];
+      if (k === EMPTY) return -1;
+      i = (i + 1) & mask;
+    }
+  }
+
+  /** `get`, with the hash already computed by the caller */
+  getH(key, h) {
+    const { keys, mask } = this;
+    let i = h & mask;
     for (;;) {
       const k = keys[i];
       if (k === key) return this.vals[i];
