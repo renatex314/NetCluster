@@ -262,7 +262,7 @@ The filter is exact matching on values declared up front. It cannot express:
 
 | you want | why not | do this instead |
 |---|---|---|
-| `plate CONTAINS "abc"` | a substring match has nothing to keep a running count of | resolve the text to ids in your own database; see [Searching by text](#searching-by-text) |
+| `plate CONTAINS "abc"` | a substring match has nothing to keep a running count of, so it cannot be an aggregate | scan for it: the server has `?where=plate~abc`, see [Searching by text](#searching-by-text) |
 | `speed > 80` | ranges are not values | bucket it: a dimension per speed band |
 | `client 7 OR client 9` | a query names one value per dimension | two queries, or a dimension whose values are the groups you actually ask about |
 | a field whose values never repeat | a per-trip id gives every device its own cell, so the aggregates become a second copy of the fleet and any ceiling fills | it is a lookup, not a map filter — see [Searching by text](#searching-by-text) |
@@ -315,20 +315,34 @@ If you need the members of a cluster, ask for them: `getLeaves(cluster_id)`, or
 
 ## Searching by text
 
-A plate or name search is a registry lookup, not a map query, and no spatial index
-makes it faster. Keep the text where it already lives — your own database —
-resolve the search to a list of device ids there, then ask the index only about
-those:
+A substring cannot be an aggregate — there is nothing to keep a running count of —
+so it is answered by scanning instead. **The server does this natively**; declare
+which fields may be searched and they are extracted from `props` at ingest:
+
+```bash
+curl -X PUT localhost:8080/v1/collections/fleet -H 'content-type: application/json' \
+  -d '{"text": ["plate"]}'
+
+curl 'localhost:8080/v1/collections/fleet/clusters?bbox=…&zoom=12&where=plate~abc'
+```
+
+The survivors are grouped into exactly the markers an unfiltered query would draw,
+so counts and centroids stay exact and two matching vehicles in the same yard come
+back as one marker of 2. It costs **`O(devices)`, not `O(markers)`** — about 1.5 ms
+over a 180,000-device fleet, against a declared filter that reads one number per
+node however large the fleet grows. Use a dimension whenever the values can be
+declared; keep `where` for the search box.
+
+**This library has no equivalent.** In-process, do it the other way round: resolve
+the text to ids wherever it already lives and ask the index about those.
 
 ```js
 const ids = await db.vehiclesMatchingPlate(q);                 // a few rows
-const pins = await Promise.all(ids.map((id) => fleet.getDevice(id)));
+const pins = ids.map((id) => index.representative(id, zoom));
 ```
 
 A text search is selective by nature — a handful of matches out of a fleet — so
-there is nothing left to cluster. Draw them as individual pins. `getDevice` gives
-each one's current position and staleness, and returns `null` for a vehicle the
-index has never heard of or has already expired.
+there is usually nothing left to cluster; draw them as individual pins.
 
 ## The caveat, in plain terms
 
