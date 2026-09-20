@@ -292,6 +292,13 @@ export declare class NetCluster<P = Record<string, unknown>> {
 /** Fixed-point world units: 2^30. */
 export declare const PREC: number;
 
+/**
+ * How far a drawn cluster may sit from its anchor device, as a fraction of the
+ * level's radius r_z. Its centroid is pulled back to this distance when the
+ * members have drifted further, so neighbouring markers keep their spacing.
+ */
+export declare const CENTROID_DRIFT: number;
+
 /** Project lng/lat to the fixed-point Web-Mercator grid the index works in. */
 export declare function project(lng: number, lat: number): [number, number];
 

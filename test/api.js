@@ -1,6 +1,6 @@
 // API-level checks: cluster expansion, children, leaves, and agreement between
 // getClusters() and a brute-force assignment of every point to its level-z rep.
-import { NetCluster } from '../src/netcluster.js';
+import { NetCluster, CENTROID_DRIFT } from '../src/netcluster.js';
 
 let seed = 7;
 const rnd = () => { seed ^= seed << 13; seed >>>= 0; seed ^= seed >> 17; seed ^= seed << 5; seed >>>= 0; return seed / 4294967296; };
@@ -40,16 +40,23 @@ for (let trial = 0; trial < 40; trial++) {
   const w = 4 / 2 ** (z / 2);
   const bbox = [c[0] - w, c[1] - w, c[0] + w, c[1] + w];
   const got = new Set(idx.getClusters(bbox, z).map(f => f.properties.cluster_id ?? ('p' + f.id)));
-  // brute force: every point's representative whose centroid falls in the box
+  // brute force: every point's representative whose drawn centroid -- held to
+  // within CENTROID_DRIFT r_z of the representative -- falls in the box
   const reps = new Map();
   for (let i = 0; i < N; i++) {
     const s = idx.representative(i, z);
     reps.set(s, (reps.get(s) || 0) + 1);
   }
   let missing = 0;
+  const lim = CENTROID_DRIFT * 2 ** 30 * 40 / (512 * 2 ** z);
   for (const [s] of reps) {
     const agg = idx._clusterAt(s, z, [0, 0, 0]);
-    const mx = agg[1] / agg[0], my = agg[2] / agg[0];
+    let mx = agg[1] / agg[0], my = agg[2] / agg[0];
+    if (agg[0] > 1) {
+      const dx = mx - idx.qx[s], dy = my - idx.qy[s];
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d > lim) { mx = idx.qx[s] + dx * lim / d; my = idx.qy[s] + dy * lim / d; }
+    }
     const [bx0, by0] = project2(bbox[0], bbox[3]), [bx1, by1] = project2(bbox[2], bbox[1]);
     if (mx >= Math.min(bx0, bx1) && mx <= Math.max(bx0, bx1) && my >= Math.min(by0, by1) && my <= Math.max(by0, by1)) {
       const key = agg[0] === 1 ? ('p' + idx.ext[s]) : (s * 32 + z);

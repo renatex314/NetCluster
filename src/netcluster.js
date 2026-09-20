@@ -48,6 +48,24 @@ const NONE = -1;
 // must stay an exact float64 integer, which caps the index at 2^29 slots.
 const CELL_SPAN = 1 << 24;
 
+/**
+ * How far a drawn cluster may sit from its anchor, as a fraction of r_z.
+ *
+ * Separation (B) is enforced on anchors -- the actual device that represents a
+ * cluster -- but what is drawn is the centroid of everything under it, and that
+ * is free to wander up to 2 r_z from the anchor as members move. Two
+ * neighbouring markers could therefore sit almost on top of each other while
+ * the tree is perfectly valid. Bounding the drift caps their approach at
+ * (1 - 2 CENTROID_DRIFT) r_z, trading "the marker sits exactly on the mass"
+ * for "markers stay apart".
+ *
+ * Centroids typically sit ~0.4 r_z from their anchor, so this moves most
+ * markers, by a few pixels. It is the value at which marker spacing on a moving
+ * fleet matches what supercluster produces on the same points; 0.5 leaves
+ * neighbours touching several times as often.
+ */
+export const CENTROID_DRIFT = 0.25;
+
 export class NetCluster {
   constructor(options = {}) {
     this.minZoom   = options.minZoom   ?? 0;
@@ -927,6 +945,28 @@ export class NetCluster {
     return out;
   }
 
+  /**
+   * Where the cluster (`s`, `z`) with mass `agg` is drawn: its centroid, pulled
+   * back to within CENTROID_DRIFT r_z of the anchor `s` when it has drifted
+   * further. A single point is never moved. Writes [mx, my] into `out`.
+   */
+  _centroid(s, z, agg, out) {
+    const count = agg[0];
+    let mx = agg[1] / count, my = agg[2] / count;
+    if (count > 1) {
+      const px = this.qx[s], py = this.qy[s];
+      const dx = mx - px, dy = my - py;
+      const lim = CENTROID_DRIFT * this.r[z];
+      const d2 = dx * dx + dy * dy;
+      if (d2 > lim * lim) {
+        const k = lim / Math.sqrt(d2);
+        mx = px + dx * k; my = py + dy * k;
+      }
+    }
+    out[0] = mx; out[1] = my;
+    return out;
+  }
+
   /** is the device at `s` itself in cell `cell`? */
   _inCell(s, cell) {
     const base = s * this._mc, n = this.dcellN[s];
@@ -979,6 +1019,7 @@ export class NetCluster {
     if (y1 < y0) { const t = y0; y0 = y1; y1 = t; }
     const out = [];
     const agg = [0, 0, 0];
+    const ctr = [0, 0];
     const stack = [];
     // roots: every center of C_0 whose subtree ball meets the box
     const cs = this.cs[0], pad0 = 2 * this.r[0];
@@ -1008,7 +1049,8 @@ export class NetCluster {
       if (px < x0 - pad || px > x1 + pad || py < y0 - pad || py > y1 + pad) continue;
       this._clusterAt(s, z, agg, cat, se);
       if (agg[0] > 0) {                     // filtered clusters can be empty
-        const mx = agg[1] / agg[0], my = agg[2] / agg[0];
+        this._centroid(s, z, agg, ctr);
+        const mx = ctr[0], my = ctr[1];
         if (mx >= x0 && mx <= x1 && my >= y0 && my <= y1) {
           // a filtered cluster of one is often a descendant, not the centre
           const one = agg[0] === 1 && cat >= 0 ? this._findSingle(s, z, cat) : s;
@@ -1090,16 +1132,18 @@ export class NetCluster {
   getChildren(clusterId) {
     const [s, z] = this._decodeClusterId(clusterId);
     const nz = this.getClusterExpansionZoom(clusterId);
-    const agg = [0, 0, 0];
+    const agg = [0, 0, 0], ctr = [0, 0];
     if (nz > this.maxZoom) return [this._leafFeature(s)];
     const res = [];
     this._clusterAt(s, nz, agg);
-    res.push(this._feature(s, nz, agg[0], agg[1] / agg[0], agg[2] / agg[0]));
+    this._centroid(s, nz, agg, ctr);
+    res.push(this._feature(s, nz, agg[0], ctr[0], ctr[1]));
     for (let b = this.kid[s]; b !== NONE; b = this.sib[b]) {
       if (this.tz[b] <= z) continue;
       if (this.tz[b] > nz) break;
       this._clusterAt(b, nz, agg);
-      res.push(this._feature(b, nz, agg[0], agg[1] / agg[0], agg[2] / agg[0]));
+      this._centroid(b, nz, agg, ctr);
+      res.push(this._feature(b, nz, agg[0], ctr[0], ctr[1]));
     }
     return res;
   }

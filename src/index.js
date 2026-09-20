@@ -1,4 +1,4 @@
-export { NetCluster, project, PREC } from './netcluster.js';
+export { NetCluster, project, PREC, CENTROID_DRIFT } from './netcluster.js';
 export { CellHash } from './cellhash.js';
 
 /** Type guard: is this feature a cluster rather than a single point? */
