@@ -116,7 +116,9 @@ function build(n) {
   N = n;
   lng = new Float64Array(N); lat = new Float64Array(N);
   head = new Float64Array(N); speed = new Float64Array(N);
-  index = new NetCluster({ radius: 60, maxZoom: 17 });
+  // Leaflet's tiles are 256 px, so `radius` is only `radius` screen pixels if
+  // the extent says 256 too; at the default 512 it would be half that.
+  index = new NetCluster({ radius: 60, extent: 256, maxZoom: 17 });
   const total = HUBS.reduce((a, h) => a + h[2], 0);
   const t0 = performance.now();
   for (let i = 0; i < N; i++) {
@@ -147,7 +149,10 @@ function report(i) {
 
 // ---- rendering --------------------------------------------------------------
 const layer = L.layerGroup().addTo(map);
-const size = (c) => c < 10 ? 30 : c < 100 ? 38 : c < 1000 ? 46 : 56;
+// Cluster centres sit at least ~half the radius apart on screen, so the
+// largest marker stays under that or neighbours overlap however good the
+// clustering is.
+const size = (c) => c < 10 ? 26 : c < 100 ? 32 : c < 1000 ? 38 : 44;
 const label = (c) => c < 1000 ? String(c) : c < 10000 ? (c/1000).toFixed(1) + 'k' : Math.round(c/1000) + 'k';
 
 function draw() {
