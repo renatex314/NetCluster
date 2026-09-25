@@ -370,7 +370,13 @@ within a constant factor.
 ### What stays exact
 
 - The number on a marker is exact — "7" means 7 matching points.
-- The marker sits at the centroid of those 7, not of the unfiltered group.
+- The marker sits at the centroid of those 7, not of the unfiltered group. When
+  the cluster's anchor is itself one of the 7 the drawn position is held within
+  `CENTROID_DRIFT · r_z` of it, the same bound an unfiltered marker gets, so
+  spacing survives. When the anchor is not a match — common for a sparse filter,
+  since the anchor is chosen for tree structure and knows nothing about your
+  query — the exact centroid is drawn instead of being pulled toward a device
+  you filtered out.
 - Markers never overlap and nothing is drawn in the wrong place.
 
 ### Three things that can trip you up

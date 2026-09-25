@@ -186,6 +186,13 @@ Filters **combine** (`client 7 AND enroute`), a device may hold **several values
 
 **You declare how many values there can be, not what they are.** `client: { values: 40 }` is a *count* — indices `0..39`, nothing enumerated — while a list like `['idle', 'enroute']` names them so queries can use the names. An unused range costs nothing: declaring 100,000 possible clients over 50,000 devices measures 45 MB, because memory tracks the values that actually occur rather than the ones you allowed for. A value in range that nothing has reported returns an empty result, not an error.
 
+An unfiltered cluster is drawn within `CENTROID_DRIFT · r_z` of its anchor — the
+device that represents it — so neighbouring markers keep their spacing. A
+filtered cluster's anchor is chosen for tree structure and may not be in the
+category at all, so it is bounded only when the anchor is a match, and otherwise
+drawn exactly on the centroid of its matching members. A marker is never pulled
+toward a device the filter excludes.
+
 The single-category spelling still works and costs what it always did:
 
 ```js

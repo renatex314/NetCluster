@@ -63,6 +63,16 @@ const CELL_SPAN = 1 << 24;
  * markers, by a few pixels. It is the value at which marker spacing on a moving
  * fleet matches what supercluster produces on the same points; 0.5 leaves
  * neighbours touching several times as often.
+ *
+ * Under a filter the anchor is picked for tree structure with no regard to the
+ * filter, so it need not be a matching device at all, and the matching mass can
+ * sit anywhere within 2 r_z of it. Clamping to a non-member would drag the
+ * marker away from the real filtered centroid by an amount and direction that
+ * changes with which anchor each zoom level visits -- a marker that jumps across
+ * zooms while no device moved. So a filtered cluster is bounded only when its
+ * anchor is itself a match (the common case for a dense filter, which then keeps
+ * its spacing), and otherwise drawn exactly on its mass. Either way it sits on,
+ * or next to, a device that matches.
  */
 export const CENTROID_DRIFT = 0.25;
 
@@ -948,12 +958,14 @@ export class NetCluster {
   /**
    * Where the cluster (`s`, `z`) with mass `agg` is drawn: its centroid, pulled
    * back to within CENTROID_DRIFT r_z of the anchor `s` when it has drifted
-   * further. A single point is never moved. Writes [mx, my] into `out`.
+   * further. A single point is never moved, and neither is a filtered cluster
+   * (`cat >= 0`) whose anchor is not itself in `cat`: it would be clamped to a
+   * non-member -- see CENTROID_DRIFT. Writes [mx, my] into `out`.
    */
-  _centroid(s, z, agg, out) {
+  _centroid(s, z, cat, agg, out) {
     const count = agg[0];
     let mx = agg[1] / count, my = agg[2] / count;
-    if (count > 1) {
+    if (count > 1 && (cat < 0 || this._inCell(s, cat))) {
       const px = this.qx[s], py = this.qy[s];
       const dx = mx - px, dy = my - py;
       const lim = CENTROID_DRIFT * this.r[z];
@@ -1049,7 +1061,7 @@ export class NetCluster {
       if (px < x0 - pad || px > x1 + pad || py < y0 - pad || py > y1 + pad) continue;
       this._clusterAt(s, z, agg, cat, se);
       if (agg[0] > 0) {                     // filtered clusters can be empty
-        this._centroid(s, z, agg, ctr);
+        this._centroid(s, z, cat, agg, ctr);
         const mx = ctr[0], my = ctr[1];
         if (mx >= x0 && mx <= x1 && my >= y0 && my <= y1) {
           // a filtered cluster of one is often a descendant, not the centre
@@ -1136,13 +1148,13 @@ export class NetCluster {
     if (nz > this.maxZoom) return [this._leafFeature(s)];
     const res = [];
     this._clusterAt(s, nz, agg);
-    this._centroid(s, nz, agg, ctr);
+    this._centroid(s, nz, -1, agg, ctr);
     res.push(this._feature(s, nz, agg[0], ctr[0], ctr[1]));
     for (let b = this.kid[s]; b !== NONE; b = this.sib[b]) {
       if (this.tz[b] <= z) continue;
       if (this.tz[b] > nz) break;
       this._clusterAt(b, nz, agg);
-      this._centroid(b, nz, agg, ctr);
+      this._centroid(b, nz, -1, agg, ctr);
       res.push(this._feature(b, nz, agg[0], ctr[0], ctr[1]));
     }
     return res;

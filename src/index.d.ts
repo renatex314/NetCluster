@@ -296,6 +296,11 @@ export declare const PREC: number;
  * How far a drawn cluster may sit from its anchor device, as a fraction of the
  * level's radius r_z. Its centroid is pulled back to this distance when the
  * members have drifted further, so neighbouring markers keep their spacing.
+ *
+ * A filtered cluster is bounded only when its anchor is itself a match;
+ * otherwise the exact centroid of the matching members is drawn, because
+ * clamping to a non-member would pull the marker toward a device the filter
+ * excludes.
  */
 export declare const CENTROID_DRIFT: number;
 

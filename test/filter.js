@@ -5,7 +5,7 @@
 // derived sums, not tree invariants -- and a filtered count that is quietly wrong
 // is the worst thing this library could do, so it is checked here against brute
 // force at every node, for every cell, after every batch of churn.
-import { NetCluster } from '../src/netcluster.js';
+import { NetCluster, project, CENTROID_DRIFT } from '../src/netcluster.js';
 
 let seed = 424242;
 const rnd = () => { seed ^= seed << 13; seed >>>= 0; seed ^= seed >> 17; seed ^= seed << 5; seed >>>= 0; return seed / 4294967296; };
@@ -264,6 +264,117 @@ for (const denseCells of [32, 0]) {
   bad(() => idx.insert('w', 0, 0, { client: [1, 2], status: 'idle' }), /not declared `multi: true`/, 'a list for a single-valued dimension');
   bad(() => idx.getClusters(WORLD, 10, { client: [1, 2] }), /takes one value/, 'a list in a filter');
   console.log('  ok undeclared shapes, unknown names and bad values are all rejected with a usable message');
+}
+
+// ------------------------------------------- the filtered drawn centroid ---
+//
+// The drift bound pulls a drawn centroid back toward its anchor, the device that
+// represents the cluster. Under a filter that anchor is chosen with no regard to
+// the filter, so it is often not a matching device at all -- and clamping to it
+// drags the marker next to a device the filter excludes, by an amount that
+// changes with which anchor each zoom happens to visit. Both tests fail against
+// the old unconditional clamp.
+{
+  const PREC = 2 ** 30;
+  // the inverse of project(), which the library does not export
+  const unproject = (x, y) => [
+    x / PREC * 360 - 180,
+    360 * Math.atan(Math.exp((0.5 - y / PREC) * 2 * Math.PI)) / Math.PI - 90,
+  ];
+
+  const idx = new NetCluster({ maxZoom: 16, categories: 2 });
+  const z = 10;
+  const r = PREC * 40 / (512 * 2 ** z);
+  const [cx, cy] = project(-46.63, -23.55);
+  // one noise device, then two matching devices well past the drift bound but
+  // still inside the cluster radius at z, on the same side of it.
+  const off = Math.trunc(0.8 * r);
+  idx.insert(1, ...unproject(cx, cy), { category: 0 });
+  idx.insert(2, ...unproject(cx + off, cy), { category: 1 });
+  idx.insert(3, ...unproject(cx + off, cy + Math.trunc(off / 4)), { category: 1 });
+
+  const got = idx.getClusters(WORLD, z, 1);
+  if (got.length !== 1) fail(`the two matching devices must cluster at z=${z}, got ${got.length} markers`);
+  if (got[0].properties.point_count !== 2) fail(`filtered marker holds ${got[0].properties.point_count}, want 2`);
+  const [mx, my] = project(...got[0].geometry.coordinates);
+  const wx = cx + off, wy = cy + Math.trunc(off / 8);
+  if (Math.abs(mx - wx) > 2 || Math.abs(my - wy) > 2) {
+    fail(`filtered marker at (${mx},${my}), true centroid (${wx},${wy}), anchor (${cx},${cy})`);
+  }
+  console.log('  ok a filtered cluster is never pulled toward a non-member anchor');
+
+  // the unfiltered marker, whose anchor is a member, keeps the drift bound
+  const all = idx.getClusters(WORLD, z);
+  if (all.length !== 1) fail(`unfiltered: ${all.length} markers, want 1`);
+  const [ux, uy] = project(...all[0].geometry.coordinates);
+  const d = Math.hypot(ux - cx, uy - cy);
+  if (d > CENTROID_DRIFT * r + 2) {
+    fail(`unfiltered marker drifted ${d} from its anchor, bound is ${CENTROID_DRIFT * r}`);
+  }
+  console.log('  ok the unfiltered marker still keeps its drift bound');
+}
+
+// The reported symptom: a sparse filter's marker jumping between adjacent zooms
+// while its members stayed together. Whenever a filtered group is the same set at
+// z and z+1 and neither level's anchor is a member, both levels draw the exact
+// centroid, so the marker must not move at all.
+{
+  const K = 50, CAT = 7, N = 6000;
+  const idx = new NetCluster({ maxZoom: 16, categories: K });
+  const members = [];
+  for (let i = 0; i < N; i++) {
+    const lng = -46.63 + (rnd() - 0.5) * 0.4, lat = -23.55 + (rnd() - 0.5) * 0.4;
+    // ~2% in the category under test: sparse enough that its clusters usually
+    // hang off an anchor that is not one of them, which is the whole point.
+    const c = rnd() < 0.02 ? CAT : 1 + Math.floor(rnd() * 40) % 40;
+    idx.insert(i, lng, lat, { category: c });
+    if (c === CAT) members.push(i);
+  }
+
+  // members grouped by representative slot, and what each group is drawn at
+  const groups = (z) => {
+    const g = new Map();
+    for (const id of members) {
+      const s = idx.representative(id, z);
+      if (!g.has(s)) g.set(s, []);
+      g.get(s).push(id);
+    }
+    return g;
+  };
+  const drawn = (z) => {
+    const m = new Map();
+    for (const f of idx.getClusters(WORLD, z, CAT)) {
+      if (!f.properties.point_count) continue;            // a single point, not a cluster
+      m.set(Math.floor(f.properties.cluster_id / 32), f.geometry.coordinates);
+    }
+    return m;
+  };
+  // the anchor's own id, if it is one of this group's members: a member is its
+  // own representative at the finest level
+  const anchorIsMember = (ms, s) => ms.some((id) => idx.representative(id, idx.maxZoom + 1) === s);
+
+  let held = 0;
+  for (let z = 0; z < idx.maxZoom; z++) {
+    const ga = groups(z), gb = groups(z + 1);
+    const da = drawn(z), db = drawn(z + 1);
+    for (const [sa, ms] of ga) {
+      if (ms.length < 2) continue;
+      const sb = idx.representative(ms[0], z + 1);
+      const other = gb.get(sb);
+      // the group split, or gained members: allowed to move
+      if (!other || other.length !== ms.length || other.some((id, i) => id !== ms[i])) continue;
+      // bounded to a member: may legitimately shift
+      if (anchorIsMember(ms, sa) || anchorIsMember(ms, sb)) continue;
+      const pa = da.get(sa), pb = db.get(sb);
+      if (!pa || !pb) continue;
+      if (Math.abs(pa[0] - pb[0]) > 1e-9 || Math.abs(pa[1] - pb[1]) > 1e-9) {
+        fail(`z=${z}->${z + 1}: a whole filtered group of ${ms.length} moved from ${pa} to ${pb}`);
+      }
+      held++;
+    }
+  }
+  if (held <= 20) fail(`only ${held} whole cross-zoom groups exercised`);
+  console.log(`  ok a whole filtered group holds still across zooms (${held} groups)`);
 }
 
 console.log('FILTER TESTS PASSED');
